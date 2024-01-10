@@ -18,7 +18,9 @@ public strictfp class RobotPlayer {
 
     static final Random rng = new Random(6147);
 
+    static int profession = 0; // 0 = soldier, 1 = builder, 2 = healer
     static int builderTarget = 0; // which spawn point he builds at
+    static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
 
     static final Direction[] directions = {
         Direction.NORTH,
@@ -33,7 +35,7 @@ public strictfp class RobotPlayer {
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
-        if (rc.readSharedArray(1) != 0) {
+        if (!(rc.readSharedArray(1) > 0)) {
             findSpawnCenters(rc);
         }
         
@@ -49,9 +51,6 @@ public strictfp class RobotPlayer {
                 rc.writeSharedArray(0, builderTarget + 1);
             }
         }
-
-        int profession = 0;
-        boolean goHideFlag = false;
 
         MapLocation[] actualSpawns = {new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2)), new MapLocation(rc.readSharedArray(3), rc.readSharedArray(4)), new MapLocation(rc.readSharedArray(5), rc.readSharedArray(6))};
 
@@ -106,37 +105,41 @@ public strictfp class RobotPlayer {
                             rc.attack(nextLoc);
                             System.out.println("Soldier attacked an enemy!");
                         }
-                    } else if (profession == 1) {
+                    } else if (profession == 1 && rc.getCrumbs() >= 350) {
                         rc.setIndicatorString("I am a builder!");
 
-                        boolean done = false;
+                        updateBuildProgress(rc, actualSpawns);
+
                         MapLocation ml = actualSpawns[builderTarget];
                         MapLocation[] trapLocs = {ml.translate(-2, 2), ml.translate(-1, 2), ml.translate(0, 2), ml.translate(1, 2), ml.translate(2, 2), ml.translate(2, 1), ml.translate(2, 0), ml.translate(2, -1), ml.translate(2, -2), ml.translate(1, -2), ml.translate(0, -2), ml.translate(-1, -2), ml.translate(-2, -2), ml.translate(-2, -1), ml.translate(-2, 0), ml.translate(-2, 1)};
+                        
+                        int n = 0;
+
                         for (MapLocation trapLoc : trapLocs) {
+                            if (buildProgess[n]) {n += 1; continue;}
+
                             if (rc.getLocation().distanceSquaredTo(trapLoc) <= 2) {
                                 if (rc.senseMapInfo(trapLoc).getTrapType() == TrapType.NONE) {
-                                    if (rc.getLocation().distanceSquaredTo(trapLoc) <= 2) {
-                                        if (rc.canBuild(TrapType.EXPLOSIVE, trapLoc)) {
-                                            rc.build(TrapType.EXPLOSIVE, trapLoc);
-                                        } else {
-                                            Direction tdir = rc.getLocation().directionTo(trapLoc);
-                                            if (rc.canMove(tdir)) {
-                                                rc.move(tdir);
-                                            }
-                                        }
-                                        done = true;
-                                    }
-                                }
+                                    if (rc.canBuild(TrapType.EXPLOSIVE, trapLoc)) {
+                                        rc.build(TrapType.EXPLOSIVE, trapLoc);
+                                        buildProgess[n] = true;
+                                    } else {buildProgess[n] = true;}
+                                } else {buildProgess[n] = true; n += 1; continue;}
                             } else {
                                 Direction tdir = rc.getLocation().directionTo(trapLoc);
                                 if (rc.canMove(tdir)) {
                                     rc.move(tdir);
                                 }
                             }
+                            n += 1;
                         }
-                        
 
-                        if (!done) {
+                        boolean allDone = true;
+                        for (boolean b : buildProgess) {
+                            if (!b) {allDone = false; break;}
+                        }
+
+                        if (allDone) {
                             Direction dir = directions[rng.nextInt(directions.length)];
                             MapLocation nextLoc = rc.getLocation().add(dir);
                             if (rc.canMove(dir)){
@@ -210,6 +213,22 @@ public strictfp class RobotPlayer {
         }
         if (rc.canWriteSharedArray(6, spawnLocs[22].y)) {
             rc.writeSharedArray(6, spawnLocs[22].y);
+        }
+    }
+
+    public static void updateBuildProgress(RobotController rc, MapLocation[] actualSpawns) throws GameActionException{
+        MapLocation ml = actualSpawns[builderTarget];
+        MapLocation[] trapLocs = {ml.translate(-2, 2), ml.translate(-1, 2), ml.translate(0, 2), ml.translate(1, 2), ml.translate(2, 2), ml.translate(2, 1), ml.translate(2, 0), ml.translate(2, -1), ml.translate(2, -2), ml.translate(1, -2), ml.translate(0, -2), ml.translate(-1, -2), ml.translate(-2, -2), ml.translate(-2, -1), ml.translate(-2, 0), ml.translate(-2, 1)};
+                        
+        int i = 0;
+        for (MapLocation trapLoc : trapLocs) {
+            if (!buildProgess[i]) {i += 1; continue;}
+            if (rc.getLocation().distanceSquaredTo(trapLoc) <= GameConstants.VISION_RADIUS_SQUARED) {
+                if (rc.senseMapInfo(trapLoc).getTrapType() == TrapType.NONE) {
+                    buildProgess[i] = false;
+                }
+            }
+            i += 1;
         }
     }
 }
