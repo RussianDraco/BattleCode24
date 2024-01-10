@@ -28,9 +28,7 @@ public strictfp class RobotPlayer {
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
 
-        System.out.println("I'm alive");
-
-        rc.setIndicatorString("Hello world!");
+        int profession = rc.getID() % 3; // 0 - soldier, 1 - builder, 2 - healer
 
         while (true) {
             turnCount += 1;
@@ -71,11 +69,22 @@ public strictfp class RobotPlayer {
                         rc.attack(nextLoc);
                         System.out.println("Take that! Damaged an enemy that was in our way!");
                     }
-
-                    MapLocation prevLoc = rc.getLocation().subtract(dir);
-                    if (rc.canBuild(TrapType.EXPLOSIVE, prevLoc) && rng.nextInt() % 37 == 1)
-                        rc.build(TrapType.EXPLOSIVE, prevLoc);
-                    updateEnemyRobots(rc);
+                    
+                    if (profession == 1) {
+                        rc.setIndicatorString("I am a builder!");
+                        MapLocation prevLoc = rc.getLocation().subtract(dir);
+                        if (rc.canBuild(TrapType.EXPLOSIVE, prevLoc) && rng.nextInt() % 37 == 1) {
+                            rc.build(TrapType.EXPLOSIVE, prevLoc);
+                        }
+                    } else if (profession == 2) {
+                        rc.setIndicatorString("I am a healer!");
+                        for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam())) {
+                            if (rc.canHeal(robot.location)) {
+                                rc.heal(robot.location);
+                                System.out.println("Healer healed a robot!");
+                            }
+                        }
+                    }
                 }
 
             } catch (GameActionException e) {
@@ -88,20 +97,6 @@ public strictfp class RobotPlayer {
 
             } finally {
                 Clock.yield();
-            }
-        }
-    }
-    public static void updateEnemyRobots(RobotController rc) throws GameActionException{
-        RobotInfo[] enemyRobots = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
-        if (enemyRobots.length != 0){
-            rc.setIndicatorString("There are nearby enemy robots! Scary!");
-            MapLocation[] enemyLocations = new MapLocation[enemyRobots.length];
-            for (int i = 0; i < enemyRobots.length; i++){
-                enemyLocations[i] = enemyRobots[i].getLocation();
-            }
-            if (rc.canWriteSharedArray(0, enemyRobots.length)){
-                rc.writeSharedArray(0, enemyRobots.length);
-                int numEnemies = rc.readSharedArray(0);
             }
         }
     }
