@@ -49,7 +49,7 @@ public strictfp class RobotPlayer {
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
-        boolean isBuilder = (rc.getID() % 9) == 0; // is a builder
+        boolean isBuilder = (rc.getID() % 2) == 0; // is a builder
 
         if (isBuilder) {
             if (rc.readSharedArray(0) == 0) {
@@ -92,20 +92,20 @@ public strictfp class RobotPlayer {
                 if (spawnAvgY > rc.getMapHeight() / 2) {
                     //width, height
                     if (incredScoutNum < rc.getMapWidth()) {
-                        scoutDest = new int[] {rc.getMapWidth() - Math.round(incredScoutNum), 0};
+                        scoutDest = new int[] {clamp0(rc.getMapWidth() - Math.round(incredScoutNum) - 1), 0};
                     } else if (incredScoutNum == rc.getMapWidth()) {
                         scoutDest = new int[] {0, 0};
                     } else {
-                        scoutDest = new int[] {0, Math.round(incredScoutNum) - rc.getMapWidth()};
+                        scoutDest = new int[] {0, clamp0(Math.round(incredScoutNum) - rc.getMapWidth() - 1)};
                     }
                 } else {
                     //width, 0
                     if (incredScoutNum < rc.getMapWidth()) {
-                        scoutDest = new int[] {rc.getMapWidth() - Math.round(incredScoutNum), rc.getMapHeight()};
+                        scoutDest = new int[] {clamp0(rc.getMapWidth() - Math.round(incredScoutNum) - 1), rc.getMapHeight() - 1};
                     } else if (incredScoutNum == rc.getMapWidth()) {
-                        scoutDest = new int[] {0, rc.getMapHeight()};
+                        scoutDest = new int[] {0, rc.getMapHeight() - 1};
                     } else {
-                        scoutDest = new int[] {0, rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth())};
+                        scoutDest = new int[] {0, clamp0(rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth()) - 1)};
                     }
                 }
             } else {
@@ -114,18 +114,18 @@ public strictfp class RobotPlayer {
                     if (incredScoutNum < rc.getMapWidth()) {
                         scoutDest = new int[] {Math.round(incredScoutNum), 0};
                     } else if (incredScoutNum == rc.getMapWidth()) {
-                        scoutDest = new int[] {rc.getMapWidth(), 0};
+                        scoutDest = new int[] {rc.getMapWidth() - 1, 0};
                     } else {
-                        scoutDest = new int[] {rc.getMapWidth(), Math.round(incredScoutNum) - rc.getMapWidth()};
+                        scoutDest = new int[] {rc.getMapWidth() - 1, clamp0(Math.round(incredScoutNum) - rc.getMapWidth() - 1)};
                     }
                 } else {
                     //0, 0
                     if (incredScoutNum < rc.getMapWidth()) {
                         scoutDest = new int[] {Math.round(incredScoutNum), rc.getMapHeight()};
                     } else if (incredScoutNum == rc.getMapWidth()) {
-                        scoutDest = new int[] {rc.getMapWidth(), rc.getMapHeight()};
+                        scoutDest = new int[] {rc.getMapWidth() - 1, rc.getMapHeight() - 1};
                     } else {
-                        scoutDest = new int[] {rc.getMapWidth(), rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth())};
+                        scoutDest = new int[] {rc.getMapWidth() - 1, clamp0(rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth()) - 1)};
                     }
                 }
             }
@@ -196,7 +196,7 @@ public strictfp class RobotPlayer {
 
                     if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS){
                         MapLocation[] crumbLocations = rc.senseNearbyCrumbs(-1);
-                        if (crumbLocations.length != 0){
+                        if (profession != 3 && crumbLocations.length != 0){
                             rc.setIndicatorString("There are nearby crumbs! Yum!");
                             Direction dir = rc.getLocation().directionTo(crumbLocations[0]);
                             if (rc.canMove(dir)) rc.move(dir);
@@ -269,7 +269,7 @@ public strictfp class RobotPlayer {
                             }
                         }
                     } else if (profession == 3) {
-                        rc.setIndicatorString("I am a scout!");
+                        rc.setIndicatorString("I am a scout! Dest " + scoutDest[0] + " " + scoutDest[1]);
 
                         if (rc.getLocation().x == scoutDest[0] && rc.getLocation().y == scoutDest[1]) {
                             profession = 0; //scout returns to being an ordinary soldier
@@ -298,7 +298,7 @@ public strictfp class RobotPlayer {
         boolean isTeamA = (rc.getTeam() == Team.A);
 
         for (MapInfo mi : rc.senseNearbyMapInfos()) {
-            if (mi.getSpawnZoneTeam() == 1 && isTeamA) {
+            if ((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) {
                 if (rc.readSharedArray(1) < 1) {
                     if (rc.canWriteSharedArray(1, mi.getMapLocation().x)) {
                         rc.writeSharedArray(1, mi.getMapLocation().x);
@@ -347,6 +347,19 @@ public strictfp class RobotPlayer {
     }
 
     public static void militaryPathfinding(RobotController rc, boolean inverted) throws GameActionException{
+        if (!(rc.readSharedArray(1) < 1)) {
+            bugO(rc, new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2)), true);
+
+            for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
+                MapLocation nextLoc = ml.location;
+                if (rc.canAttack(nextLoc)){
+                    rc.attack(nextLoc);
+                    System.out.println("Healer/Soldier attacked! BUGO");
+                }
+            }
+            return;
+        }
+
         militaryMovement(rc, inverted);
 
         for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
@@ -399,24 +412,56 @@ public strictfp class RobotPlayer {
         return false;
     }
 
+    public static int clamp0(int n) {if (n < 0) {return 0;} else {return n;}}
 
-    public static void bugO(RobotController rc, MapLocation destination) throws GameActionException{
+
+    public static void bugO(RobotController rc, MapLocation destination, boolean hateWater) throws GameActionException{
         Direction dir = rc.getLocation().directionTo(destination);
-        if (rc.canMove(dir)) {
+        if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
             rc.move(dir);
             bugodir = null;
+            bugoBad = null;
             return;
         } else {
+            if (hateWater) {
+                MapLocation nextLoc = rc.getLocation().add(dir);
+                if (rc.senseMapInfo(nextLoc).isWater()) {
+                    if (rc.canFill(nextLoc)) {
+                        rc.fill(nextLoc);
+                    }
+                }
+                if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
+                    rc.move(dir);
+                    bugodir = null;
+                    bugoBad = null;
+                    return;
+                }
+            }
+
             if (bugodir == null) {
                 bugodir = dir;
             }
 
             for (int i = 0; i < 8; i++) {
-                if (rc.canMove(bugodir)) {
+                if (rc.canMove(bugodir) && !rc.getLocation().add(bugodir).equals(bugoBad)) {
+                    bugoBad = rc.getLocation();
                     rc.move(bugodir);
                     bugodir.rotateRight();
                     return;
                 } else {
+                    if (hateWater) {
+                        MapLocation nextLoc = rc.getLocation().add(dir);
+                        if (rc.senseMapInfo(nextLoc).isWater()) {
+                            if (rc.canFill(nextLoc)) {
+                                rc.fill(nextLoc);
+                            }
+                        }
+                        if (rc.canMove(bugodir)) {
+                            rc.move(bugodir);
+                            return;
+                        }
+                    }
+
                     bugodir = bugodir.rotateLeft();
                 }
             }
