@@ -22,6 +22,9 @@ public strictfp class RobotPlayer {
     static int builderTarget; // which spawn point he builds at
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
 
+    static boolean enemyEast;
+    static boolean goingAround = false;
+
     static final Direction[] directions = {
         Direction.NORTH,
         Direction.NORTHEAST,
@@ -39,7 +42,7 @@ public strictfp class RobotPlayer {
             findSpawnCenters(rc);
         }
 
-        boolean isBuilder = (rc.getID() % 2) == 0; // is a builder
+        boolean isBuilder = (rc.getID() % 9) == 0; // is a builder
 
         if (isBuilder) {
             if (rc.readSharedArray(0) == 0) {
@@ -62,15 +65,27 @@ public strictfp class RobotPlayer {
         while (true) {
             turnCount += 1;
 
+            if (rc.canBuyGlobal(GlobalUpgrade.HEALING)) {
+                rc.buyGlobal(GlobalUpgrade.HEALING);
+            } else if (rc.canBuyGlobal(GlobalUpgrade.ACTION)) {
+                rc.buyGlobal(GlobalUpgrade.ACTION);
+            }
+
             try {
                 if (!rc.isSpawned()){
                     if (profession == 1) {
                         MapLocation randomLoc = actualSpawns[builderTarget];
-                        if (rc.canSpawn(randomLoc)) rc.spawn(randomLoc);
+                        if (rc.canSpawn(randomLoc)){
+                            rc.spawn(randomLoc);
+                            enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
+                        }
                     } else {
                         MapLocation[] spawnLocs = rc.getAllySpawnLocations();
                         MapLocation randomLoc = spawnLocs[rng.nextInt(spawnLocs.length)];
-                        if (rc.canSpawn(randomLoc)) rc.spawn(randomLoc);
+                        if (rc.canSpawn(randomLoc)) {
+                            rc.spawn(randomLoc);
+                            enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
+                        }
                     }
                 }
                 else {
@@ -82,9 +97,19 @@ public strictfp class RobotPlayer {
                     }
                     if (rc.hasFlag() && rc.getRoundNum() >= GameConstants.SETUP_ROUNDS){
                         MapLocation[] spawnLocs = rc.getAllySpawnLocations();
-                        MapLocation firstLoc = spawnLocs[0];
-                        Direction dir = rc.getLocation().directionTo(firstLoc);
-                        if (rc.canMove(dir)) rc.move(dir);
+                        
+                        MapLocation closestLoc = null;
+                        int closestDist = 999999;
+
+                        for (MapLocation ml : spawnLocs) {
+                            int d = rc.getLocation().distanceSquaredTo(ml);
+                            if (d < closestDist) {
+                                closestDist = d;
+                                closestLoc = ml;
+                            }
+                        }
+
+                        pathfind(rc, closestLoc);
                     }
 
                     if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS){
@@ -96,19 +121,17 @@ public strictfp class RobotPlayer {
                         }
                     }
                     
-                    if (profession == 0) {
-                        rc.setIndicatorString("I am a soldier!");
+                    if (profession == 0 || profession == 2) {
+                        if (profession == 0) {
+                            rc.setIndicatorString("I am a soldier!");
+                        } else if (profession == 2) {
+                            rc.setIndicatorString("I am a healer!");
+                        }
 
-                        Direction dir = directions[rng.nextInt(directions.length)];
-                        MapLocation nextLoc = rc.getLocation().add(dir);
-                        if (rc.canMove(dir)){
-                            rc.move(dir);
-                        }
-                        else if (rc.canAttack(nextLoc)){
-                            rc.attack(nextLoc);
-                            System.out.println("Soldier attacked an enemy!");
-                        }
-                    } else if (profession == 1 && rc.getCrumbs() >= 350) {
+                        militaryPathfinding(rc, false);
+                    }
+
+                    if (profession == 1 && rc.getCrumbs() >= 350) {
                         rc.setIndicatorString("I am a builder!");
 
                         updateBuildProgress(rc, actualSpawns);
@@ -157,18 +180,6 @@ public strictfp class RobotPlayer {
                             }
                         }
                     } else if (profession == 2) {
-                        rc.setIndicatorString("I am a healer!");
-
-                        Direction dir = directions[rng.nextInt(directions.length)];
-                        MapLocation nextLoc = rc.getLocation().add(dir);
-                        if (rc.canMove(dir)){
-                            rc.move(dir);
-                        }
-                        else if (rc.canAttack(nextLoc)){
-                            rc.attack(nextLoc);
-                            System.out.println("Healer had to take arms!");
-                        }
-
                         for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam())) {
                             if (rc.canHeal(robot.location)) {
                                 rc.heal(robot.location);
@@ -230,6 +241,63 @@ public strictfp class RobotPlayer {
                 }
             }
             i += 1;
+        }
+    }
+
+    public static void militaryPathfinding(RobotController rc, boolean inverted) throws GameActionException{
+        militaryMovement(rc, inverted);
+
+        for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
+            MapLocation nextLoc = ml.location;
+            if (rc.canAttack(nextLoc)){
+                rc.attack(nextLoc);
+                System.out.println("Healer/Soldier attacked!");
+            }
+        }
+    }
+
+    public static void militaryMovement(RobotController rc, boolean inverted) throws GameActionException{
+        //east and west is reversed here for some reason, its kinda icky idk
+        if (!goingAround) {if (militaryMove(rc, Direction.NORTH)) {goingAround = false; return;}}
+
+        if (enemyEast) {
+            if (militaryMove(rc, Direction.WEST)) {goingAround = false; return;}
+        } else {
+            if (militaryMove(rc, Direction.EAST)) {goingAround = false; return;}
+        }
+
+        if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {if (militaryMove(rc, Direction.SOUTH)) {goingAround = true; return;}}
+
+        if (enemyEast) {
+            if (militaryMove(rc, Direction.EAST)) {goingAround = true; return;}
+        } else {
+            if (militaryMove(rc, Direction.WEST)) {goingAround = true; return;}
+        }
+
+        System.out.println("I am stuck!");
+    }
+
+    public static boolean militaryMove(RobotController rc, Direction dir) throws GameActionException{
+        MapLocation nextLoc = rc.getLocation().add(dir);
+        if (rc.canMove(dir)){
+            rc.move(dir);
+            return true;
+        }
+        else if (rc.canAttack(nextLoc)){
+            rc.attack(nextLoc);
+            System.out.println("Healer/Soldier attacked!");
+        }
+        return false;
+    }
+
+
+    public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
+        Direction dir = rc.getLocation().directionTo(destination);
+        if (rc.canMove(dir)) {
+            rc.move(dir);
+            return;
+        } else {
+            
         }
     }
 }
