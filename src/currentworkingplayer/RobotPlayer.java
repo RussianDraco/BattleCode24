@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+
+//later, bit-shifting should be implemented in order to use shared array better
 /*Shared array allocation
 0 - next builder target
 1,2,3,4,5,6 - actual spawn locations
@@ -23,7 +25,11 @@ public strictfp class RobotPlayer {
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
 
     static boolean enemyEast;
+    static boolean enemySouth;
+
     static boolean goingAround = false;
+
+    static Direction bugodir = null;
 
     static final Direction[] directions = {
         Direction.NORTH,
@@ -78,6 +84,7 @@ public strictfp class RobotPlayer {
                         if (rc.canSpawn(randomLoc)){
                             rc.spawn(randomLoc);
                             enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
+                            enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
                     } else {
                         MapLocation[] spawnLocs = rc.getAllySpawnLocations();
@@ -85,6 +92,7 @@ public strictfp class RobotPlayer {
                         if (rc.canSpawn(randomLoc)) {
                             rc.spawn(randomLoc);
                             enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
+                            enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
                     }
                 }
@@ -109,7 +117,7 @@ public strictfp class RobotPlayer {
                             }
                         }
 
-                        pathfind(rc, closestLoc);
+                        bugO(rc, closestLoc);
                     }
 
                     if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS){
@@ -257,8 +265,11 @@ public strictfp class RobotPlayer {
     }
 
     public static void militaryMovement(RobotController rc, boolean inverted) throws GameActionException{
-        //east and west is reversed here for some reason, its kinda icky idk
-        if (!goingAround) {if (militaryMove(rc, Direction.NORTH)) {goingAround = false; return;}}
+        if (!enemySouth) {
+            if (militaryMove(rc, Direction.NORTH)) {goingAround = false; return;}
+        } else {
+            if (militaryMove(rc, Direction.SOUTH)) {goingAround = false; return;}
+        }
 
         if (enemyEast) {
             if (militaryMove(rc, Direction.WEST)) {goingAround = false; return;}
@@ -266,7 +277,11 @@ public strictfp class RobotPlayer {
             if (militaryMove(rc, Direction.EAST)) {goingAround = false; return;}
         }
 
-        if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {if (militaryMove(rc, Direction.SOUTH)) {goingAround = true; return;}}
+        if (!enemySouth) {
+            if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {if (militaryMove(rc, Direction.SOUTH)) {goingAround = true; return;}}
+        } else {
+            if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {if (militaryMove(rc, Direction.NORTH)) {goingAround = true; return;}}
+        }
 
         if (enemyEast) {
             if (militaryMove(rc, Direction.EAST)) {goingAround = true; return;}
@@ -291,13 +306,26 @@ public strictfp class RobotPlayer {
     }
 
 
-    public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
+    public static void bugO(RobotController rc, MapLocation destination) throws GameActionException{
         Direction dir = rc.getLocation().directionTo(destination);
         if (rc.canMove(dir)) {
             rc.move(dir);
+            bugodir = null;
             return;
         } else {
-            
+            if (bugodir == null) {
+                bugodir = dir;
+            }
+
+            for (int i = 0; i < 8; i++) {
+                if (rc.canMove(bugodir)) {
+                    rc.move(bugodir);
+                    bugodir.rotateRight();
+                    return;
+                } else {
+                    bugodir = bugodir.rotateLeft();
+                }
+            }
         }
     }
 }
