@@ -18,8 +18,8 @@ public strictfp class RobotPlayer {
 
     static final Random rng = new Random(6147);
 
-    static int profession = 0; // 0 = soldier, 1 = builder, 2 = healer
-    static int builderTarget = 0; // which spawn point he builds at
+    static int profession; // 0 = soldier, 1 = builder, 2 = healer
+    static int builderTarget; // which spawn point he builds at
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
 
     static final Direction[] directions = {
@@ -38,17 +38,20 @@ public strictfp class RobotPlayer {
         if (!(rc.readSharedArray(1) > 0)) {
             findSpawnCenters(rc);
         }
-        
-        boolean isBuilder = (rc.getID() % 13) == 0; // is a builder
 
-        if (rc.readSharedArray(0) == 0) {
-            if (rc.canWriteSharedArray(0, 1)) {
-                rc.writeSharedArray(0, 1);
-            }
-        } else {
-            builderTarget = rc.readSharedArray(0) % 3;
-            if (rc.canWriteSharedArray(0, builderTarget + 1)) {
-                rc.writeSharedArray(0, builderTarget + 1);
+        boolean isBuilder = (rc.getID() % 2) == 0; // is a builder
+
+        if (isBuilder) {
+            if (rc.readSharedArray(0) == 0) {
+                builderTarget = 0;
+                if (rc.canWriteSharedArray(0, 1)) {
+                    rc.writeSharedArray(0, 1);
+                }
+            } else {
+                builderTarget = rc.readSharedArray(0) % 3;
+                if (rc.canWriteSharedArray(0, builderTarget + 1)) {
+                    rc.writeSharedArray(0, builderTarget + 1);
+                }
             }
         }
 
@@ -135,9 +138,7 @@ public strictfp class RobotPlayer {
                         }
 
                         boolean allDone = true;
-                        for (boolean b : buildProgess) {
-                            if (!b) {allDone = false; break;}
-                        }
+                        for (boolean b : buildProgess) {if (!b) {allDone = false; break;}}
 
                         if (allDone) {
                             Direction dir = directions[rng.nextInt(directions.length)];
