@@ -12,15 +12,16 @@ import java.util.Set;
 //later, bit-shifting should be implemented in order to use shared array better
 /*Shared array allocation
 0 - next builder target
-1,2,3,4,5,6 - actual spawn locations
+1,2,3,4,5,6 - enemy spawn locations
 
+63 - temporary bit for scout creation
 **/
 public strictfp class RobotPlayer {
     static int turnCount = 0;
 
     static final Random rng = new Random(6147);
 
-    static int profession; // 0 = soldier, 1 = builder, 2 = healer
+    static int profession; // 0 = soldier, 1 = builder, 2 = healer, 3 - scout(temp profession -> soldier)
     static int builderTarget; // which spawn point he builds at
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
 
@@ -30,6 +31,10 @@ public strictfp class RobotPlayer {
     static boolean goingAround = false;
 
     static Direction bugodir = null;
+    static MapLocation bugoBad = null; //place where bugo has to go around
+
+    static int scoutNum;
+    static int[] scoutDest;
 
     static final Direction[] directions = {
         Direction.NORTH,
@@ -44,10 +49,6 @@ public strictfp class RobotPlayer {
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
-        if (!(rc.readSharedArray(1) > 0)) {
-            findSpawnCenters(rc);
-        }
-
         boolean isBuilder = (rc.getID() % 9) == 0; // is a builder
 
         if (isBuilder) {
@@ -64,11 +65,84 @@ public strictfp class RobotPlayer {
             }
         }
 
-        MapLocation[] actualSpawns = {new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2)), new MapLocation(rc.readSharedArray(3), rc.readSharedArray(4)), new MapLocation(rc.readSharedArray(5), rc.readSharedArray(6))};
+        MapLocation[] spawnLocs = rc.getAllySpawnLocations();
+        MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
+        spawnLocs = null;
 
-        if (isBuilder) {profession = 1;} else {if (rc.getID() % 2 == 0) {profession = 2;} else {profession = 0;}}
+        if (isBuilder) {profession = 1;} else {if (rc.getID() % 2 == 0) {profession = 2;} else {
+            if (rc.readSharedArray(63) < 7) { // 7 scouts
+                profession = 3;
+                scoutNum = rc.readSharedArray(63);
+
+                if (rc.canWriteSharedArray(63, rc.readSharedArray(63) + 1)) {
+                    rc.writeSharedArray(63, rc.readSharedArray(63) + 1);
+                }
+            } else {
+                profession = 0;
+            }
+        }}
+
+        if (profession == 3) {
+            float spawnAvgX = (actualSpawns[0].x + actualSpawns[1].x + actualSpawns[2].x) / 3;
+            float spawnAvgY = (actualSpawns[0].y + actualSpawns[1].y + actualSpawns[2].y) / 3;
+            float scoutDIncr = (rc.getMapHeight() + rc.getMapWidth())/7; //uses scout number: 7
+            float incredScoutNum = scoutNum * scoutDIncr;
+
+            if (spawnAvgX > rc.getMapWidth() / 2) {
+                if (spawnAvgY > rc.getMapHeight() / 2) {
+                    //width, height
+                    if (incredScoutNum < rc.getMapWidth()) {
+                        scoutDest = new int[] {rc.getMapWidth() - Math.round(incredScoutNum), 0};
+                    } else if (incredScoutNum == rc.getMapWidth()) {
+                        scoutDest = new int[] {0, 0};
+                    } else {
+                        scoutDest = new int[] {0, Math.round(incredScoutNum) - rc.getMapWidth()};
+                    }
+                } else {
+                    //width, 0
+                    if (incredScoutNum < rc.getMapWidth()) {
+                        scoutDest = new int[] {rc.getMapWidth() - Math.round(incredScoutNum), rc.getMapHeight()};
+                    } else if (incredScoutNum == rc.getMapWidth()) {
+                        scoutDest = new int[] {0, rc.getMapHeight()};
+                    } else {
+                        scoutDest = new int[] {0, rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth())};
+                    }
+                }
+            } else {
+                if (spawnAvgY > rc.getMapHeight() / 2) {
+                    //0, height
+                    if (incredScoutNum < rc.getMapWidth()) {
+                        scoutDest = new int[] {Math.round(incredScoutNum), 0};
+                    } else if (incredScoutNum == rc.getMapWidth()) {
+                        scoutDest = new int[] {rc.getMapWidth(), 0};
+                    } else {
+                        scoutDest = new int[] {rc.getMapWidth(), Math.round(incredScoutNum) - rc.getMapWidth()};
+                    }
+                } else {
+                    //0, 0
+                    if (incredScoutNum < rc.getMapWidth()) {
+                        scoutDest = new int[] {Math.round(incredScoutNum), rc.getMapHeight()};
+                    } else if (incredScoutNum == rc.getMapWidth()) {
+                        scoutDest = new int[] {rc.getMapWidth(), rc.getMapHeight()};
+                    } else {
+                        scoutDest = new int[] {rc.getMapWidth(), rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth())};
+                    }
+                }
+            }
+        }
 
         while (true) {
+            boolean has0 = false;
+            if (profession == 3) {
+                for (int i = 8; i < 12; i++) {
+                    if (rc.readSharedArray(i) < 1) {
+                        has0 = true;
+                        break;
+                    }
+                }
+            }
+            if (!has0) {profession = 0;}
+
             turnCount += 1;
 
             if (rc.canBuyGlobal(GlobalUpgrade.HEALING)) {
@@ -87,7 +161,7 @@ public strictfp class RobotPlayer {
                             enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
                     } else {
-                        MapLocation[] spawnLocs = rc.getAllySpawnLocations();
+                        spawnLocs = rc.getAllySpawnLocations();
                         MapLocation randomLoc = spawnLocs[rng.nextInt(spawnLocs.length)];
                         if (rc.canSpawn(randomLoc)) {
                             rc.spawn(randomLoc);
@@ -104,7 +178,7 @@ public strictfp class RobotPlayer {
                         }
                     }
                     if (rc.hasFlag() && rc.getRoundNum() >= GameConstants.SETUP_ROUNDS){
-                        MapLocation[] spawnLocs = rc.getAllySpawnLocations();
+                        spawnLocs = rc.getAllySpawnLocations();
                         
                         MapLocation closestLoc = null;
                         int closestDist = 999999;
@@ -194,6 +268,15 @@ public strictfp class RobotPlayer {
                                 System.out.println("Healer healed a robot!");
                             }
                         }
+                    } else if (profession == 3) {
+                        rc.setIndicatorString("I am a scout!");
+
+                        if (rc.getLocation().x == scoutDest[0] && rc.getLocation().y == scoutDest[1]) {
+                            profession = 0; //scout returns to being an ordinary soldier
+                        }
+
+                        bugO(rc, new MapLocation(scoutDest[0], scoutDest[1]));
+                        scoutEnemyDetect(rc);
                     }
                 }
 
@@ -211,28 +294,39 @@ public strictfp class RobotPlayer {
         }
     }
 
-    public static void findSpawnCenters(RobotController rc) throws GameActionException{
-        MapLocation[] spawnLocs = rc.getAllySpawnLocations();
+    public static void scoutEnemyDetect(RobotController rc) throws GameActionException{
+        boolean isTeamA = (rc.getTeam() == Team.A);
 
-        if (rc.canWriteSharedArray(1, spawnLocs[4].x)) {
-            rc.writeSharedArray(1, spawnLocs[4].x);
-        }
-        if (rc.canWriteSharedArray(2, spawnLocs[4].y)) {
-            rc.writeSharedArray(2, spawnLocs[4].y);
-        }
+        for (MapInfo mi : rc.senseNearbyMapInfos()) {
+            if (mi.getSpawnZoneTeam() == 1 && isTeamA) {
+                if (rc.readSharedArray(1) < 1) {
+                    if (rc.canWriteSharedArray(1, mi.getMapLocation().x)) {
+                        rc.writeSharedArray(1, mi.getMapLocation().x);
+                    }
+                    if (rc.canWriteSharedArray(2, mi.getMapLocation().y)) {
+                        rc.writeSharedArray(2, mi.getMapLocation().y);
+                    }
+                } else if (rc.readSharedArray(3) < 1) {
+                    if ((Math.abs(rc.readSharedArray(1) - mi.getMapLocation().x) < 4) && (Math.abs(rc.readSharedArray(2) - mi.getMapLocation().y) < 4)) {continue;}
 
-        if (rc.canWriteSharedArray(3, spawnLocs[13].x)) {
-            rc.writeSharedArray(3, spawnLocs[13].x);
-        }
-        if (rc.canWriteSharedArray(4, spawnLocs[13].y)) {
-            rc.writeSharedArray(4, spawnLocs[13].y);
-        }
+                    if (rc.canWriteSharedArray(3, mi.getMapLocation().x)) {
+                        rc.writeSharedArray(3, mi.getMapLocation().x);
+                    }
+                    if (rc.canWriteSharedArray(4, mi.getMapLocation().y)) {
+                        rc.writeSharedArray(4, mi.getMapLocation().y);
+                    }
+                } else if (rc.readSharedArray(5) < 1) {
+                    if ((Math.abs(rc.readSharedArray(1) - mi.getMapLocation().x) < 4) && (Math.abs(rc.readSharedArray(2) - mi.getMapLocation().y) < 4)) {continue;}
+                    if ((Math.abs(rc.readSharedArray(3) - mi.getMapLocation().x) < 4) && (Math.abs(rc.readSharedArray(4) - mi.getMapLocation().y) < 4)) {continue;}
 
-        if (rc.canWriteSharedArray(5, spawnLocs[22].x)) {
-            rc.writeSharedArray(5, spawnLocs[22].x);
-        }
-        if (rc.canWriteSharedArray(6, spawnLocs[22].y)) {
-            rc.writeSharedArray(6, spawnLocs[22].y);
+                    if (rc.canWriteSharedArray(5, mi.getMapLocation().x)) {
+                        rc.writeSharedArray(5, mi.getMapLocation().x);
+                    }
+                    if (rc.canWriteSharedArray(6, mi.getMapLocation().y)) {
+                        rc.writeSharedArray(6, mi.getMapLocation().y);
+                    }
+                }
+            }
         }
     }
 
