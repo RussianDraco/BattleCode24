@@ -28,6 +28,7 @@ public strictfp class RobotPlayer {
     static int builderTarget; // which spawn point he builds at
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
     static boolean recordedBuildDone = false;
+    static MapLocation builderTravelingTo = null;
 
     static boolean goingAround = false;
 
@@ -259,6 +260,14 @@ public strictfp class RobotPlayer {
                         for (boolean b : buildProgess) {if (!b) {allDone = false; break;}}
 
                         if (allDone) {
+                            if (builderTravelingTo != null) {
+                                pathfind(rc, builderTravelingTo);
+
+                                if (rc.getLocation().equals(builderTravelingTo)) {
+                                    builderTravelingTo = null;
+                                }
+                            }
+
                             if (!recordedBuildDone) {
                                 if (rc.canWriteSharedArray(builderTarget + 11, 1)) {
                                     rc.writeSharedArray(builderTarget + 11, 1);
@@ -267,24 +276,25 @@ public strictfp class RobotPlayer {
                             }
 
                             if (rc.readSharedArray(11) != 1) {
+                                builderTravelingTo = actualSpawns[0];
                                 builderTarget = 0;
                                 allDone = false;
                                 for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
                                 recordedBuildDone = false;
                             } else if (rc.readSharedArray(12) != 1) {
+                                builderTravelingTo = actualSpawns[1];
                                 builderTarget = 1;
                                 allDone = false;
                                 for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
                                 recordedBuildDone = false;
                             } else if (rc.readSharedArray(13) != 1) {
+                                builderTravelingTo = actualSpawns[2];
                                 builderTarget = 2;
                                 allDone = false;
                                 for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
                                 recordedBuildDone = false;
                             }
-                        }
-
-                        if (allDone && rc.getCrumbs() >= 800) {
+                        } else if (allDone && rc.getCrumbs() >= 800) {
                             Direction dir = directions[rng.nextInt(directions.length)];
                             MapLocation nextLoc = rc.getLocation().add(dir);
                             if (rc.canMove(dir)){
