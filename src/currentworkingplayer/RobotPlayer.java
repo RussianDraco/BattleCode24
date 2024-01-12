@@ -15,6 +15,7 @@ import java.util.Set;
 1,2,3,4,5,6 - enemy spawn locations
 7 - number of flags collected
 8,9,10 - soldiers report on whther enemy spawn should be visited ((1,2), (3,4), (5,6)) respectively {1 = no, 0 = yes} //should probably create a quality system later maybe
+11,12,13 - builders done with base
 
 63 - temporary bit for scout creation
 **/
@@ -26,6 +27,7 @@ public strictfp class RobotPlayer {
     static int profession; // 0 = soldier, 1 = builder, 2 = healer, 3 - scout(temp profession -> soldier)
     static int builderTarget; // which spawn point he builds at
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
+    static boolean recordedBuildDone = false;
 
     static boolean goingAround = false;
 
@@ -255,6 +257,32 @@ public strictfp class RobotPlayer {
 
                         boolean allDone = true;
                         for (boolean b : buildProgess) {if (!b) {allDone = false; break;}}
+
+                        if (allDone) {
+                            if (!recordedBuildDone) {
+                                if (rc.canWriteSharedArray(builderTarget + 11, 1)) {
+                                    rc.writeSharedArray(builderTarget + 11, 1);
+                                }
+                                recordedBuildDone = true;
+                            }
+
+                            if (rc.readSharedArray(11) != 1) {
+                                builderTarget = 0;
+                                allDone = false;
+                                for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
+                                recordedBuildDone = false;
+                            } else if (rc.readSharedArray(12) != 1) {
+                                builderTarget = 1;
+                                allDone = false;
+                                for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
+                                recordedBuildDone = false;
+                            } else if (rc.readSharedArray(13) != 1) {
+                                builderTarget = 2;
+                                allDone = false;
+                                for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
+                                recordedBuildDone = false;
+                            }
+                        }
 
                         if (allDone && rc.getCrumbs() >= 800) {
                             Direction dir = directions[rng.nextInt(directions.length)];
