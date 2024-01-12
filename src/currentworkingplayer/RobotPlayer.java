@@ -16,6 +16,7 @@ import java.util.Set;
 7 - number of flags collected
 8,9,10 - soldiers report on whther enemy spawn should be visited ((1,2), (3,4), (5,6)) respectively {1 = no, 0 = yes} //should probably create a quality system later maybe
 11,12,13 - builders done with base
+14,15 - soldier found enemy with flag
 
 63 - temporary bit for scout creation
 **/
@@ -199,12 +200,60 @@ public strictfp class RobotPlayer {
                         rc.setIndicatorString("I am a scout! Destination: " + scoutDest[0] + " " + scoutDest[1] + "");
                     }
 
+                    FlagInfo[] flags = rc.senseNearbyFlags(-1, rc.getTeam().opponent());
+                    if (flags.length != 0){
+                        for (FlagInfo flag : flags) {
+                            if (flag.isPickedUp()) {
+                                if (rc.senseRobotAtLocation(flag.getLocation()).getTeam() == rc.getTeam()) {
+                                    break;
+                                } else {
+                                    if (rc.canWriteSharedArray(14, flag.getLocation().x)) {
+                                        rc.writeSharedArray(14, flag.getLocation().x);
+                                    }
+                                    if (rc.canWriteSharedArray(15, flag.getLocation().y)) {
+                                        rc.writeSharedArray(15, flag.getLocation().y);
+                                    }
+
+                                    Direction d = rc.getLocation().directionTo(flag.getLocation());
+                                    if (rc.canMove(d)) {
+                                        rc.move(d);
+                                    }
+
+                                    if (rc.canAttack(flag.getLocation())) {
+                                        rc.attack(flag.getLocation());
+                                        System.out.println("Near flag attack!");
+                                    }
+                                }
+                            }
+
+                            if (rc.canPickupFlag(flag.getLocation())){
+                                rc.pickupFlag(flag.getLocation());
+                                rc.setIndicatorString("Holding a flag!");   
+                            } else {
+                                Direction dir = rc.getLocation().directionTo(flag.getLocation());
+                                MapLocation nextLoc = rc.getLocation().add(dir);
+                                if (rc.canMove(dir)) {
+                                    rc.move(dir);
+                                } else if (rc.canFill(nextLoc)) {
+                                    rc.fill(nextLoc);
+                                    if (rc.canMove(dir)) {
+                                        rc.move(dir);
+                                    }
+                                } else if (rc.canAttack(nextLoc)){
+                                    rc.attack(nextLoc);
+                                    System.out.println("Near flag attack!");
+                                }
+                            }
+                        }
+                    }
+
                     if (rc.canPickupFlag(rc.getLocation())){
                         if (rc.senseNearbyFlags(1, rc.getTeam().opponent()).length != 0){
                             rc.pickupFlag(rc.getLocation());
                             rc.setIndicatorString("Holding a flag!");
                         }
                     }
+
                     if (rc.hasFlag() && rc.getRoundNum() >= GameConstants.SETUP_ROUNDS){
                         spawnLocs = rc.getAllySpawnLocations();
                         
@@ -294,7 +343,10 @@ public strictfp class RobotPlayer {
                                 for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
                                 recordedBuildDone = false;
                             }
-                        } else if (allDone && rc.getCrumbs() >= 800) {
+                        }
+                        
+                        if (allDone && rc.getCrumbs() >= 800 && builderTravelingTo == null) {
+                            System.out.println("Random building");
                             Direction dir = directions[rng.nextInt(directions.length)];
                             MapLocation nextLoc = rc.getLocation().add(dir);
                             if (rc.canMove(dir)){
@@ -435,6 +487,13 @@ public strictfp class RobotPlayer {
     }
 
     public static void militaryPathfinding(RobotController rc) throws GameActionException{
+        if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS) {
+            if (rc.getRoundNum() > Math.round(GameConstants.SETUP_ROUNDS * 0.8)) {
+                pathfind(rc, new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 2) - 1));
+                return;
+            }
+        }
+
         MapInfo mi = rc.senseMapInfo(rc.getLocation());
         if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) && rc.getCrumbs() > 700) {
             if (rc.canBuild(TrapType.EXPLOSIVE, rc.getLocation())) {
@@ -446,10 +505,13 @@ public strictfp class RobotPlayer {
         updateMilitaryRecords(rc);
 
         MapLocation moveTarget = null;
+        boolean checkNullFlag = false;
 
         MapLocation[] flagDetections = rc.senseBroadcastFlagLocations();
         if (flagDetections.length != 0) {
             moveTarget = flagDetections[0];
+        } else if (!(rc.readSharedArray(14) < 1)) {
+            moveTarget = new MapLocation(rc.readSharedArray(14), rc.readSharedArray(15)); checkNullFlag = true;
         } else if (!(rc.readSharedArray(5) < 1) && (rc.readSharedArray(8) == 0)) {
             moveTarget = new MapLocation(rc.readSharedArray(5), rc.readSharedArray(6));
         } else if (!(rc.readSharedArray(3) < 1) && (rc.readSharedArray(9) == 0)) {
@@ -460,6 +522,19 @@ public strictfp class RobotPlayer {
 
         if (moveTarget != null) {
             pathfind(rc, moveTarget);
+
+            if (checkNullFlag) {
+                if (rc.getLocation().equals(moveTarget)) {
+                    if (rc.senseNearbyFlags(-1, rc.getTeam().opponent()).length == 0) {
+                        if (rc.canWriteSharedArray(14, 0)) {
+                            rc.writeSharedArray(14, 0);
+                        }
+                        if (rc.canWriteSharedArray(15, 0)) {
+                            rc.writeSharedArray(15, 0);
+                        }
+                    }
+                }
+            }
         } else {
             militaryMovement(rc);
         }
