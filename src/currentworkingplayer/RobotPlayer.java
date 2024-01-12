@@ -13,6 +13,7 @@ import java.util.Set;
 /*Shared array allocation
 0 - next builder target
 1,2,3,4,5,6 - enemy spawn locations
+7 - number of flags collected
 
 63 - temporary bit for scout creation
 **/
@@ -25,9 +26,6 @@ public strictfp class RobotPlayer {
     static int builderTarget; // which spawn point he builds at
     static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
 
-    static boolean enemyEast;
-    static boolean enemySouth;
-
     static boolean goingAround = false;
 
     static Direction bugodir = null;
@@ -35,6 +33,8 @@ public strictfp class RobotPlayer {
 
     static int scoutNum;
     static int[] scoutDest;
+
+    static boolean isTeamA;
 
     static final Direction[] directions = {
         Direction.NORTH,
@@ -50,6 +50,8 @@ public strictfp class RobotPlayer {
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
         rng = new Random(rc.getID());
+
+        isTeamA = (rc.getTeam() == Team.A);
 
         boolean isBuilder = (rng.nextFloat() > 0.85); // is a builder
 
@@ -155,23 +157,16 @@ public strictfp class RobotPlayer {
 
             try {
                 if (!rc.isSpawned()){
-                    boolean spwnd = false;
                     if (profession == 1) {
                         MapLocation randomLoc = actualSpawns[builderTarget];
                         if (rc.canSpawn(randomLoc)){
                             rc.spawn(randomLoc);
-                            spwnd = true;
-                            enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
-                            enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
                     } else {
                         spawnLocs = rc.getAllySpawnLocations();
                         MapLocation randomLoc = spawnLocs[rng.nextInt(spawnLocs.length)];
                         if (rc.canSpawn(randomLoc)) {
                             rc.spawn(randomLoc);
-                            spwnd = true;
-                            enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
-                            enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
                     }
                 }
@@ -206,20 +201,18 @@ public strictfp class RobotPlayer {
                             }
                         }
 
-                        pathfind(rc, closestLoc, true);
+                        pathfind(rc, closestLoc);
                     }
 
-                    if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS){
-                        MapLocation[] crumbLocations = rc.senseNearbyCrumbs(-1);
-                        if (profession != 3 && crumbLocations.length != 0){
-                            rc.setIndicatorString("There are nearby crumbs! Yum!");
-                            Direction dir = rc.getLocation().directionTo(crumbLocations[0]);
-                            if (rc.canMove(dir)) rc.move(dir);
-                        }
+                    MapLocation[] crumbLocations = rc.senseNearbyCrumbs(-1);
+                    if (profession != 3 && crumbLocations.length != 0){
+                        System.out.println("I found a crumb!");
+                        Direction dir = rc.getLocation().directionTo(crumbLocations[0]);
+                        if (rc.canMove(dir)) rc.move(dir);
                     }
                     
                     if (profession == 0 || profession == 2) {
-                        militaryPathfinding(rc, false);
+                        militaryPathfinding(rc);
                     }
 
                     if (profession == 1 && rc.getCrumbs() >= 350) {
@@ -280,7 +273,7 @@ public strictfp class RobotPlayer {
                             profession = 0; //scout returns to being an ordinary soldier
                         }
 
-                        pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]), true);
+                        pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]));
                         scoutEnemyDetect(rc);
                     }
                 }
@@ -300,8 +293,6 @@ public strictfp class RobotPlayer {
     }
 
     public static void scoutEnemyDetect(RobotController rc) throws GameActionException{
-        boolean isTeamA = (rc.getTeam() == Team.A);
-
         for (MapInfo mi : rc.senseNearbyMapInfos()) {
             if ((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) {
                 if (rc.readSharedArray(1) < 1) {
@@ -351,21 +342,28 @@ public strictfp class RobotPlayer {
         }
     }
 
-    public static void militaryPathfinding(RobotController rc, boolean inverted) throws GameActionException{
-        if (!(rc.readSharedArray(1) < 1)) {
-            pathfind(rc, new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2)), true);
-
-            for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
-                MapLocation nextLoc = ml.location;
-                if (rc.canAttack(nextLoc)){
-                    rc.attack(nextLoc);
-                    System.out.println("Healer/Soldier attacked! BUGO");
-                }
+    public static void militaryPathfinding(RobotController rc) throws GameActionException{
+        MapInfo mi = rc.senseMapInfo(rc.getLocation());
+        if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) && rc.getCrumbs() > 700) {
+            if (rc.canBuild(TrapType.EXPLOSIVE, rc.getLocation())) {
+                rc.build(TrapType.EXPLOSIVE, rc.getLocation());
             }
-            return;
         }
 
-        militaryMovement(rc, inverted);
+        MapLocation moveTarget = null;
+
+        MapLocation[] flagDetections = rc.senseBroadcastFlagLocations();
+        if (flagDetections.length != 0) {
+            moveTarget = flagDetections[0];
+        } else if (!(rc.readSharedArray(1) < 1)) {
+            moveTarget = new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2));
+        }
+
+        if (moveTarget != null) {
+            pathfind(rc, moveTarget);
+        } else {
+            militaryMovement(rc);
+        }
 
         for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
             MapLocation nextLoc = ml.location;
@@ -376,73 +374,40 @@ public strictfp class RobotPlayer {
         }
     }
 
-    public static void militaryMovement(RobotController rc, boolean inverted) throws GameActionException{
-        if (!enemySouth) {
-            if (militaryMove(rc, Direction.NORTH)) {goingAround = false; return;}
-        } else {
-            if (militaryMove(rc, Direction.SOUTH)) {goingAround = false; return;}
-        }
-
-        if (enemyEast) {
-            if (militaryMove(rc, Direction.WEST)) {goingAround = false; return;}
-        } else {
-            if (militaryMove(rc, Direction.EAST)) {goingAround = false; return;}
-        }
-
-        if (!enemySouth) {
-            if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {if (militaryMove(rc, Direction.SOUTH)) {goingAround = true; return;}}
-        } else {
-            if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {if (militaryMove(rc, Direction.NORTH)) {goingAround = true; return;}}
-        }
-
-        if (enemyEast) {
-            if (militaryMove(rc, Direction.EAST)) {goingAround = true; return;}
-        } else {
-            if (militaryMove(rc, Direction.WEST)) {goingAround = true; return;}
-        }
-
-        System.out.println("I am stuck!");
-    }
-
-    public static boolean militaryMove(RobotController rc, Direction dir) throws GameActionException{
+    public static void militaryMovement(RobotController rc) throws GameActionException{
+        Direction dir = directions[rng.nextInt(directions.length)];
         MapLocation nextLoc = rc.getLocation().add(dir);
-        if (rc.canMove(dir)){
+        if (rc.canMove(dir)) {
             rc.move(dir);
-            return true;
-        }
-        else if (rc.canAttack(nextLoc)){
+        } else if (rc.canFill(nextLoc)) {
+            rc.fill(nextLoc);
+        } else if (rc.canAttack(nextLoc)){
             rc.attack(nextLoc);
             System.out.println("Healer/Soldier attacked!");
         }
-        return false;
     }
 
     public static int clamp0(int n) {if (n < 0) {return 0;} else {return n;}}
 
 
-    public static void pathfind(RobotController rc, MapLocation destination, boolean hateWater) throws GameActionException{
+    public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
+        if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;} //debugging
+
         Direction dir = rc.getLocation().directionTo(destination);
         if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
             rc.move(dir);
             bugodir = null;
             bugoBad = null;
             return;
-        } else {
-            if (hateWater) {
-                MapLocation nextLoc = rc.getLocation().add(dir);
-                if (rc.senseMapInfo(nextLoc).isWater()) {
-                    if (rc.canFill(nextLoc)) {
-                        rc.fill(nextLoc);
-                    }
-                }
-                if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
-                    rc.move(dir);
-                    bugodir = null;
-                    bugoBad = null;
-                    return;
-                }
+        } else if (rc.canFill(rc.getLocation().add(dir))) {
+            rc.fill(rc.getLocation().add(dir));
+            if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
+                rc.move(dir);
+                bugodir = null;
+                bugoBad = null;
+                return;
             }
-
+        } else {
             if (bugodir == null) {
                 bugodir = dir;
             }
@@ -453,20 +418,15 @@ public strictfp class RobotPlayer {
                     rc.move(bugodir);
                     bugodir = bugodir.rotateRight();
                     return;
-                } else {
-                    if (hateWater) {
-                        MapLocation nextLoc = rc.getLocation().add(dir);
-                        if (rc.senseMapInfo(nextLoc).isWater()) {
-                            if (rc.canFill(nextLoc)) {
-                                rc.fill(nextLoc);
-                            }
-                        }
-                        if (rc.canMove(bugodir)) {
-                            rc.move(bugodir);
-                            return;
-                        }
+                } else if (rc.canFill(rc.getLocation().add(bugodir))) {
+                    rc.fill(rc.getLocation().add(bugodir));
+                    if (rc.canMove(bugodir)) {
+                        bugoBad = rc.getLocation();
+                        rc.move(bugodir);
+                        bugodir = bugodir.rotateRight();
+                        return;
                     }
-
+                } else {
                     bugodir = bugodir.rotateLeft();
                 }
             }
