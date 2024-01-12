@@ -14,6 +14,7 @@ import java.util.Set;
 0 - next builder target
 1,2,3,4,5,6 - enemy spawn locations
 7 - number of flags collected
+8,9,10 - soldiers report on whther enemy spawn should be visited ((1,2), (3,4), (5,6)) respectively {1 = no, 0 = yes} //should probably create a quality system later maybe
 
 63 - temporary bit for scout creation
 **/
@@ -55,6 +56,18 @@ public strictfp class RobotPlayer {
 
         boolean isBuilder = (rng.nextFloat() > 0.85); // is a builder
 
+        if (rc.readSharedArray(8) != 0) {
+            if (rc.canWriteSharedArray(8, 0)) {
+                rc.writeSharedArray(8, 0);
+            }
+            if (rc.canWriteSharedArray(9, 0)) {
+                rc.writeSharedArray(9, 0);
+            }
+            if (rc.canWriteSharedArray(10, 0)) {
+                rc.writeSharedArray(10, 0);
+            }
+        }
+
         if (isBuilder) {
             if (rc.readSharedArray(0) == 0) {
                 builderTarget = 0;
@@ -73,7 +86,9 @@ public strictfp class RobotPlayer {
         MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
         spawnLocs = null;
 
-        if (isBuilder) {profession = 1;} else {if (rng.nextFloat() >= 0.5) {profession = 2;} else {
+        if (isBuilder) {
+            profession = 1;
+        } else {if (rng.nextFloat() >= 0.5) {profession = 2;} else {
             if (rc.readSharedArray(63) < 7) { // 7 scouts
                 profession = 3;
                 scoutNum = rc.readSharedArray(63);
@@ -96,20 +111,20 @@ public strictfp class RobotPlayer {
                 if (spawnAvgY > rc.getMapHeight() / 2) {
                     //width, height
                     if (incredScoutNum < rc.getMapWidth()) {
-                        scoutDest = new int[] {clamp0(rc.getMapWidth() - Math.round(incredScoutNum) - 1), 0};
+                        scoutDest = new int[] {scoutClamp(rc.getMapWidth() - Math.round(incredScoutNum) - 1, rc.getMapWidth()), 0};
                     } else if (incredScoutNum == rc.getMapWidth()) {
                         scoutDest = new int[] {0, 0};
                     } else {
-                        scoutDest = new int[] {0, clamp0(Math.round(incredScoutNum) - rc.getMapWidth() - 1)};
+                        scoutDest = new int[] {0, scoutClamp(Math.round(incredScoutNum) - rc.getMapWidth() - 1, rc.getMapHeight())};
                     }
                 } else {
                     //width, 0
                     if (incredScoutNum < rc.getMapWidth()) {
-                        scoutDest = new int[] {clamp0(rc.getMapWidth() - Math.round(incredScoutNum) - 1), rc.getMapHeight() - 1};
+                        scoutDest = new int[] {scoutClamp(rc.getMapWidth() - Math.round(incredScoutNum) - 1, rc.getMapWidth()), rc.getMapHeight() - 1};
                     } else if (incredScoutNum == rc.getMapWidth()) {
                         scoutDest = new int[] {0, rc.getMapHeight() - 1};
                     } else {
-                        scoutDest = new int[] {0, clamp0(rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth()) - 1)};
+                        scoutDest = new int[] {0, scoutClamp(rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth()) - 1, rc.getMapHeight())};
                     }
                 }
             } else {
@@ -120,16 +135,16 @@ public strictfp class RobotPlayer {
                     } else if (incredScoutNum == rc.getMapWidth()) {
                         scoutDest = new int[] {rc.getMapWidth() - 1, 0};
                     } else {
-                        scoutDest = new int[] {rc.getMapWidth() - 1, clamp0(Math.round(incredScoutNum) - rc.getMapWidth() - 1)};
+                        scoutDest = new int[] {rc.getMapWidth() - 1, scoutClamp(Math.round(incredScoutNum) - rc.getMapWidth() - 1, rc.getMapHeight())};
                     }
                 } else {
                     //0, 0
                     if (incredScoutNum < rc.getMapWidth()) {
-                        scoutDest = new int[] {Math.round(incredScoutNum), rc.getMapHeight()};
+                        scoutDest = new int[] {Math.round(incredScoutNum), rc.getMapHeight() - 1};
                     } else if (incredScoutNum == rc.getMapWidth()) {
                         scoutDest = new int[] {rc.getMapWidth() - 1, rc.getMapHeight() - 1};
                     } else {
-                        scoutDest = new int[] {rc.getMapWidth() - 1, clamp0(rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth()) - 1)};
+                        scoutDest = new int[] {rc.getMapWidth() - 1, scoutClamp(rc.getMapHeight() - (Math.round(incredScoutNum) - rc.getMapWidth()) - 1, rc.getMapHeight())};
                     }
                 }
             }
@@ -178,7 +193,7 @@ public strictfp class RobotPlayer {
                     } else if (profession == 2) {
                         rc.setIndicatorString("I am a healer!");
                     } else if (profession == 3) {
-                        rc.setIndicatorString("I am a scout!");
+                        rc.setIndicatorString("I am a scout! Destination: " + scoutDest[0] + " " + scoutDest[1] + "");
                     }
 
                     if (rc.canPickupFlag(rc.getLocation())){
@@ -209,10 +224,6 @@ public strictfp class RobotPlayer {
                         System.out.println("I found a crumb!");
                         Direction dir = rc.getLocation().directionTo(crumbLocations[0]);
                         if (rc.canMove(dir)) rc.move(dir);
-                    }
-                    
-                    if (profession == 0 || profession == 2) {
-                        militaryPathfinding(rc);
                     }
 
                     if (profession == 1 && rc.getCrumbs() >= 350) {
@@ -245,7 +256,7 @@ public strictfp class RobotPlayer {
                         boolean allDone = true;
                         for (boolean b : buildProgess) {if (!b) {allDone = false; break;}}
 
-                        if (allDone) {
+                        if (allDone && rc.getCrumbs() >= 800) {
                             Direction dir = directions[rng.nextInt(directions.length)];
                             MapLocation nextLoc = rc.getLocation().add(dir);
                             if (rc.canMove(dir)){
@@ -257,7 +268,7 @@ public strictfp class RobotPlayer {
                             }
 
                             MapLocation prevLoc = rc.getLocation().subtract(dir);
-                            if (rc.canBuild(TrapType.EXPLOSIVE, prevLoc) && rng.nextInt() % 37 == 1) {
+                            if (rc.canBuild(TrapType.EXPLOSIVE, prevLoc) && rng.nextInt() % 11 == 1) {
                                 rc.build(TrapType.EXPLOSIVE, prevLoc);
                             }
                         }
@@ -275,6 +286,10 @@ public strictfp class RobotPlayer {
 
                         pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]));
                         scoutEnemyDetect(rc);
+                    }
+
+                    if (profession == 0 || profession == 2) {
+                        militaryPathfinding(rc);
                     }
                 }
 
@@ -342,6 +357,45 @@ public strictfp class RobotPlayer {
         }
     }
 
+    public static void updateMilitaryRecords(RobotController rc) throws GameActionException{
+        MapInfo mi = rc.senseMapInfo(rc.getLocation());
+        if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA))) {
+            int spwnIndx = -1;
+
+            for (int enemIndx = 0; enemIndx < 3; enemIndx++) {
+                if ((Math.abs(rc.readSharedArray(enemIndx * 2 + 1) - rc.getLocation().x) <= 3) &&
+                    (Math.abs(rc.readSharedArray(enemIndx * 2 + 2) - rc.getLocation().y) <= 3)) {
+                    spwnIndx = enemIndx;
+                    break;
+                }
+            }
+
+            if (spwnIndx == -1) {return;}
+
+            if (rc.senseNearbyFlags(20, rc.getTeam().opponent()).length != 0) {
+                if (rc.canWriteSharedArray(spwnIndx + 8, 0)) {
+                    rc.writeSharedArray(spwnIndx + 8, 0);
+                }
+                return;
+            }
+
+            for (MapInfo mi_ : rc.senseNearbyMapInfos()) {
+                if (((mi_.getSpawnZoneTeam() == 2 && isTeamA) || (mi_.getSpawnZoneTeam() == 1 && !isTeamA))) {
+                    if (mi_.getTrapType() == TrapType.NONE) {
+                        if (rc.canWriteSharedArray(spwnIndx + 8, 0)) {
+                            rc.writeSharedArray(spwnIndx + 8, 0);
+                        }
+                        return;
+                    }
+                }
+            }
+
+            if (rc.canWriteSharedArray(spwnIndx + 8, 1)) {
+                rc.writeSharedArray(spwnIndx + 8, 1);
+            }
+        }
+    }
+
     public static void militaryPathfinding(RobotController rc) throws GameActionException{
         MapInfo mi = rc.senseMapInfo(rc.getLocation());
         if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) && rc.getCrumbs() > 700) {
@@ -350,12 +404,19 @@ public strictfp class RobotPlayer {
             }
         }
 
+        scoutEnemyDetect(rc);
+        updateMilitaryRecords(rc);
+
         MapLocation moveTarget = null;
 
         MapLocation[] flagDetections = rc.senseBroadcastFlagLocations();
         if (flagDetections.length != 0) {
             moveTarget = flagDetections[0];
-        } else if (!(rc.readSharedArray(1) < 1)) {
+        } else if (!(rc.readSharedArray(5) < 1) && (rc.readSharedArray(8) == 0)) {
+            moveTarget = new MapLocation(rc.readSharedArray(5), rc.readSharedArray(6));
+        } else if (!(rc.readSharedArray(3) < 1) && (rc.readSharedArray(9) == 0)) {
+            moveTarget = new MapLocation(rc.readSharedArray(3), rc.readSharedArray(4));
+        } else if (!(rc.readSharedArray(1) < 1) && (rc.readSharedArray(10) == 0)) {
             moveTarget = new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2));
         }
 
@@ -387,7 +448,7 @@ public strictfp class RobotPlayer {
         }
     }
 
-    public static int clamp0(int n) {if (n < 0) {return 0;} else {return n;}}
+    public static int scoutClamp(int n, int N) {if (n < 0) {return 0;} else if (n > N) {return N;} else {return n;}}
 
 
     public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
