@@ -19,7 +19,7 @@ import java.util.Set;
 public strictfp class RobotPlayer {
     static int turnCount = 0;
 
-    static final Random rng = new Random(6147);
+    static Random rng;
 
     static int profession; // 0 = soldier, 1 = builder, 2 = healer, 3 - scout(temp profession -> soldier)
     static int builderTarget; // which spawn point he builds at
@@ -49,7 +49,9 @@ public strictfp class RobotPlayer {
 
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
-        boolean isBuilder = (rc.getID() % 2) == 0; // is a builder
+        rng = new Random(rc.getID());
+
+        boolean isBuilder = (rng.nextFloat() > 0.85); // is a builder
 
         if (isBuilder) {
             if (rc.readSharedArray(0) == 0) {
@@ -69,7 +71,7 @@ public strictfp class RobotPlayer {
         MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
         spawnLocs = null;
 
-        if (isBuilder) {profession = 1;} else {if (rc.getID() % 2 == 0) {profession = 2;} else {
+        if (isBuilder) {profession = 1;} else {if (rng.nextFloat() >= 0.5) {profession = 2;} else {
             if (rc.readSharedArray(63) < 7) { // 7 scouts
                 profession = 3;
                 scoutNum = rc.readSharedArray(63);
@@ -132,16 +134,16 @@ public strictfp class RobotPlayer {
         }
 
         while (true) {
-            boolean has0 = false;
             if (profession == 3) {
+                boolean has0 = false;
                 for (int i = 8; i < 12; i++) {
                     if (rc.readSharedArray(i) < 1) {
                         has0 = true;
                         break;
                     }
                 }
+                if (!has0) {profession = 0;}
             }
-            if (!has0) {profession = 0;}
 
             turnCount += 1;
 
@@ -153,10 +155,12 @@ public strictfp class RobotPlayer {
 
             try {
                 if (!rc.isSpawned()){
+                    boolean spwnd = false;
                     if (profession == 1) {
                         MapLocation randomLoc = actualSpawns[builderTarget];
                         if (rc.canSpawn(randomLoc)){
                             rc.spawn(randomLoc);
+                            spwnd = true;
                             enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
                             enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
@@ -165,12 +169,23 @@ public strictfp class RobotPlayer {
                         MapLocation randomLoc = spawnLocs[rng.nextInt(spawnLocs.length)];
                         if (rc.canSpawn(randomLoc)) {
                             rc.spawn(randomLoc);
+                            spwnd = true;
                             enemyEast = rc.getLocation().x > rc.getMapWidth() / 2;
                             enemySouth = rc.getLocation().y > rc.getMapHeight() / 2;
                         }
                     }
                 }
                 else {
+                    if (profession == 0) {
+                        rc.setIndicatorString("I am a soldier!");
+                    } else if (profession == 1) {
+                        rc.setIndicatorString("I am a builder!");
+                    } else if (profession == 2) {
+                        rc.setIndicatorString("I am a healer!");
+                    } else if (profession == 3) {
+                        rc.setIndicatorString("I am a scout!");
+                    }
+
                     if (rc.canPickupFlag(rc.getLocation())){
                         if (rc.senseNearbyFlags(1, rc.getTeam().opponent()).length != 0){
                             rc.pickupFlag(rc.getLocation());
@@ -191,7 +206,7 @@ public strictfp class RobotPlayer {
                             }
                         }
 
-                        bugO(rc, closestLoc);
+                        pathfind(rc, closestLoc, true);
                     }
 
                     if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS){
@@ -204,18 +219,10 @@ public strictfp class RobotPlayer {
                     }
                     
                     if (profession == 0 || profession == 2) {
-                        if (profession == 0) {
-                            rc.setIndicatorString("I am a soldier!");
-                        } else if (profession == 2) {
-                            rc.setIndicatorString("I am a healer!");
-                        }
-
                         militaryPathfinding(rc, false);
                     }
 
                     if (profession == 1 && rc.getCrumbs() >= 350) {
-                        rc.setIndicatorString("I am a builder!");
-
                         updateBuildProgress(rc, actualSpawns);
 
                         MapLocation ml = actualSpawns[builderTarget];
@@ -269,13 +276,11 @@ public strictfp class RobotPlayer {
                             }
                         }
                     } else if (profession == 3) {
-                        rc.setIndicatorString("I am a scout! Dest " + scoutDest[0] + " " + scoutDest[1]);
-
                         if (rc.getLocation().x == scoutDest[0] && rc.getLocation().y == scoutDest[1]) {
                             profession = 0; //scout returns to being an ordinary soldier
                         }
 
-                        bugO(rc, new MapLocation(scoutDest[0], scoutDest[1]));
+                        pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]), true);
                         scoutEnemyDetect(rc);
                     }
                 }
@@ -348,7 +353,7 @@ public strictfp class RobotPlayer {
 
     public static void militaryPathfinding(RobotController rc, boolean inverted) throws GameActionException{
         if (!(rc.readSharedArray(1) < 1)) {
-            bugO(rc, new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2)), true);
+            pathfind(rc, new MapLocation(rc.readSharedArray(1), rc.readSharedArray(2)), true);
 
             for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
                 MapLocation nextLoc = ml.location;
@@ -415,7 +420,7 @@ public strictfp class RobotPlayer {
     public static int clamp0(int n) {if (n < 0) {return 0;} else {return n;}}
 
 
-    public static void bugO(RobotController rc, MapLocation destination, boolean hateWater) throws GameActionException{
+    public static void pathfind(RobotController rc, MapLocation destination, boolean hateWater) throws GameActionException{
         Direction dir = rc.getLocation().directionTo(destination);
         if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
             rc.move(dir);
@@ -446,7 +451,7 @@ public strictfp class RobotPlayer {
                 if (rc.canMove(bugodir) && !rc.getLocation().add(bugodir).equals(bugoBad)) {
                     bugoBad = rc.getLocation();
                     rc.move(bugodir);
-                    bugodir.rotateRight();
+                    bugodir = bugodir.rotateRight();
                     return;
                 } else {
                     if (hateWater) {
