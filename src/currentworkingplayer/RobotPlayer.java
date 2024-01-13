@@ -175,6 +175,7 @@ public strictfp class RobotPlayer {
 
             try {
                 if (!rc.isSpawned()){
+                    Pathfinding.resetBug();
                     if (profession == 1) {
                         MapLocation randomLoc = actualSpawns[builderTarget];
                         if (rc.canSpawn(randomLoc)){
@@ -267,7 +268,7 @@ public strictfp class RobotPlayer {
                             }
                         }
 
-                        pathfind(rc, closestLoc);
+                        Pathfinding.pathfind(rc, closestLoc);
                     }
 
                     MapLocation[] crumbLocations = rc.senseNearbyCrumbs(-1);
@@ -309,7 +310,7 @@ public strictfp class RobotPlayer {
 
                         if (allDone) {
                             if (builderTravelingTo != null) {
-                                pathfind(rc, builderTravelingTo);
+                                Pathfinding.pathfind(rc, builderTravelingTo);
 
                                 if (rc.getLocation().equals(builderTravelingTo)) {
                                     builderTravelingTo = null;
@@ -372,7 +373,7 @@ public strictfp class RobotPlayer {
                             profession = 0; //scout returns to being an ordinary soldier
                         }
 
-                        pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]));
+                        Pathfinding.pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]));
                         scoutEnemyDetect(rc);
                     }
 
@@ -487,7 +488,7 @@ public strictfp class RobotPlayer {
     public static void militaryPathfinding(RobotController rc) throws GameActionException{
         if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS) {
             if (rc.getRoundNum() > Math.round(GameConstants.SETUP_ROUNDS * 0.8)) {
-                pathfind(rc, new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 2) - 1));
+                Pathfinding.pathfind(rc, new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 2) - 1));
                 return;
             }
         }
@@ -519,7 +520,7 @@ public strictfp class RobotPlayer {
         }
 
         if (moveTarget != null) {
-            pathfind(rc, moveTarget);
+            Pathfinding.pathfind(rc, moveTarget);
 
             if (checkNullFlag) {
                 if (rc.getLocation().equals(moveTarget)) {
@@ -561,8 +562,8 @@ public strictfp class RobotPlayer {
 
     public static int scoutClamp(int n, int N) {if (n < 0) {return 0;} else if (n > N) {return N;} else {return n;}}
 
-
-    public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
+    /*
+    public static void path find(RobotController rc, MapLocation destination) throws GameActionException{
         //if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;} //debugging
 
         Direction dir = rc.getLocation().directionTo(destination);
@@ -599,5 +600,5 @@ public strictfp class RobotPlayer {
                 }
             }
         }
-    }
+    }**/
 }
