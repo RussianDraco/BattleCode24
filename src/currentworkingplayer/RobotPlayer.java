@@ -154,6 +154,7 @@ public strictfp class RobotPlayer {
         }
 
         while (true) {
+            Pathfinding.updateTurn();
             if (profession == 3) {
                 boolean has0 = false;
                 for (int i = 8; i < 12; i++) {
@@ -520,6 +521,7 @@ public strictfp class RobotPlayer {
         }
 
         if (moveTarget != null) {
+            rc.setIndicatorDot(moveTarget, 255, 0, 0);
             Pathfinding.pathfind(rc, moveTarget);
 
             if (checkNullFlag) {
@@ -563,7 +565,7 @@ public strictfp class RobotPlayer {
     public static int scoutClamp(int n, int N) {if (n < 0) {return 0;} else if (n > N) {return N;} else {return n;}}
 
     /*
-    public static void path find(RobotController rc, MapLocation destination) throws GameActionException{
+    public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
         //if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;} //debugging
 
         Direction dir = rc.getLocation().directionTo(destination);

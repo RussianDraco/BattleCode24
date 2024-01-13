@@ -2,34 +2,85 @@ package currentworkingplayer;
 
 import battlecode.common.*;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 
-import com.google.flatbuffers.FlexBuffers.Map;
 
 public strictfp class Pathfinding {
     private static int bugstate = 0; // 0 - head towards destination, 1 - bug around obstacle
-    private static MapLocation closestObstacle = null;
-    private static int closestObstacleDist = 99999;
+    //private static MapLocation closestObstacle = null; // for bugOne thats not being used rn (and closestObstacleDist)
+    //private static int closestObstacleDist = 99999;
     private static Direction bugDir = null;
 
     private static MapLocation prevDest = null;
     private static HashSet<MapLocation> line = null;
     private static int obstacleStartDist = 0;
 
+    private static ArrayList<MapLocation> lastMoves = new ArrayList<>();
+    private static int bugTwoCounter = -1;
+
+    public static void resetBug() {
+        return;
+        /*bugstate = 0;
+        //closestObstacle = null;
+        //closestObstacleDist = 99999;
+        bugDir = null;
+        prevDest = null;
+        line = null;
+        obstacleStartDist = 0;
+        lastMoves = new ArrayList<>();
+        bugTwoCounter = -1;**/
+    }
+
+    public static void updateTurn() {
+        if (bugTwoCounter > 0) {
+            bugTwoCounter--;
+        } else if (bugTwoCounter == 0) {
+            bugTwoCounter = -1;
+        }
+    }
+
     public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
-        bugTwo(rc, destination);
+        if (bugTwoCounter > 0) {
+            bugTwo(rc, destination);
+        } else {
+            bugZero(rc, destination);
+        }
+
+        if (lastMoves.contains(rc.getLocation())) {
+            //bugTwoCounter = 7; //number of turns to use bugTwo for (bugZero is failing for some reason)
+        }
+
+        lastMoves.add(rc.getLocation());
+        if (lastMoves.size() > 10) {
+            lastMoves.remove(0);
+        }
     }
 
     public static void bugZero(RobotController rc, MapLocation destination) throws GameActionException{
+        if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;}
         Direction bugDir = rc.getLocation().directionTo(destination);
 
         if (rc.canMove(bugDir)) {
             rc.move(bugDir);
+        } else if (rc.canFill(rc.getLocation().add(bugDir))) {
+            rc.fill(rc.getLocation().add(bugDir));
+            if (rc.canMove(bugDir)) {
+                rc.move(bugDir);
+            } else {
+                for (int i = 0; i < 8; i++) {
+                    if (rc.canMove(bugDir)) {
+                        rc.move(bugDir);
+                        break;
+                    } else {
+                        bugDir = bugDir.rotateLeft();
+                    }
+                }
+            }
         } else {
             for (int i = 0; i < 8; i++) {
                 if (rc.canMove(bugDir)) {
                     rc.move(bugDir);
-                    System.out.println("BUGGED");
                     break;
                 } else {
                     bugDir = bugDir.rotateLeft();
@@ -39,12 +90,7 @@ public strictfp class Pathfinding {
     }
 
 
-    public static void resetBug() {
-        bugstate = 0;
-        closestObstacle = null;
-        closestObstacleDist = 999999;
-        bugDir = null;
-    }
+    /*
     public static void bugOne(RobotController rc, MapLocation destination) throws GameActionException{
         if (bugstate == 0) {
             bugDir = rc.getLocation().directionTo(destination);
@@ -76,7 +122,7 @@ public strictfp class Pathfinding {
                 }
             }
         }
-    }
+    }**/
 
 
     private static HashSet<MapLocation> createLine(MapLocation a, MapLocation b) {
@@ -117,25 +163,25 @@ public strictfp class Pathfinding {
         return locs;
     }
     public static void bugTwo(RobotController rc, MapLocation destination) throws GameActionException{
-
         if (!destination.equals(prevDest)) {
             prevDest = destination;
 
             line = createLine(rc.getLocation(), destination);
         }
 
-        MapLocation first = line.iterator().next();
-        MapLocation last = null;
-        for (MapLocation loc : line) {
-            last = loc;
-        }
-
-        rc.setIndicatorLine(first, last, closestObstacleDist, closestObstacleDist, bugstate);
-
         if (bugstate == 0) {
             bugDir = rc.getLocation().directionTo(destination);
             if (rc.canMove(bugDir)) {
                 rc.move(bugDir);
+            } else if (rc.canFill(rc.getLocation().add(bugDir))) {
+                rc.fill(rc.getLocation().add(bugDir));
+                if (rc.canMove(bugDir)) {
+                    rc.move(bugDir);
+                } else {
+                    bugstate = 1;
+                    obstacleStartDist = rc.getLocation().distanceSquaredTo(destination);
+                    bugDir = rc.getLocation().directionTo(destination);
+                }
             } else {
                 bugstate = 1;
                 obstacleStartDist = rc.getLocation().distanceSquaredTo(destination);
@@ -152,6 +198,16 @@ public strictfp class Pathfinding {
                     bugDir = bugDir.rotateRight();
                     bugDir = bugDir.rotateRight();
                     break;
+                } else if (rc.canFill(rc.getLocation().add(bugDir))) {
+                    rc.fill(rc.getLocation().add(bugDir));
+                    if (rc.canMove(bugDir)) {
+                        rc.move(bugDir);
+                        bugDir = bugDir.rotateRight();
+                        bugDir = bugDir.rotateRight();
+                        break;
+                    } else {
+                        bugDir = bugDir.rotateLeft();
+                    }
                 } else {
                     bugDir = bugDir.rotateLeft();
                 }
