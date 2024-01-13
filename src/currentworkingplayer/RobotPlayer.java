@@ -46,6 +46,9 @@ public strictfp class RobotPlayer {
 
     static int escortFollowingIndex = -1; //the index a escort is following(18, 21, 24)
 
+    static int SMALL_MAP_MIN = 1200; //min map area for small map
+    static boolean mapSizeSmall = false; //the current player plays badly on small  maps due to large enemy concentrations, small maps will have better escort protection
+
     static final Direction[] directions = {
         Direction.NORTH,
         Direction.NORTHEAST,
@@ -62,6 +65,7 @@ public strictfp class RobotPlayer {
         rng = new Random(rc.getID());
 
         isTeamA = (rc.getTeam() == Team.A);
+        if ((rc.getMapWidth() * rc.getMapHeight()) <= SMALL_MAP_MIN) {mapSizeSmall = true;}
 
         boolean isBuilder = (rng.nextFloat() > 0.85); // is a builder
 
@@ -183,47 +187,7 @@ public strictfp class RobotPlayer {
                 if (!rc.isSpawned()){
                     Pathfinding.resetBug();
 
-                    int myId = rc.getID();
-                    if (rc.readSharedArray(18) == myId) {
-                        if (rc.canWriteSharedArray(16, 0)) {
-                            rc.writeSharedArray(16, 0);
-                        }
-                        if (rc.canWriteSharedArray(17, 0)) {
-                            rc.writeSharedArray(17, 0);
-                        }
-                        if (rc.canWriteSharedArray(18, 0)) {
-                            rc.writeSharedArray(18, 0);
-                        }
-                        if (rc.canWriteSharedArray(61, 0)) {
-                            rc.writeSharedArray(61, 0);
-                        }
-                    } else if (rc.readSharedArray(21) == myId) {
-                        if (rc.canWriteSharedArray(19, 0)) {
-                            rc.writeSharedArray(19, 0);
-                        }
-                        if (rc.canWriteSharedArray(20, 0)) {
-                            rc.writeSharedArray(20, 0);
-                        }
-                        if (rc.canWriteSharedArray(21, 0)) {
-                            rc.writeSharedArray(21, 0);
-                        }
-                        if (rc.canWriteSharedArray(62, 0)) {
-                            rc.writeSharedArray(62, 0);
-                        }
-                    } else if (rc.readSharedArray(24) == myId) {
-                        if (rc.canWriteSharedArray(22, 0)) {
-                            rc.writeSharedArray(22, 0);
-                        }
-                        if (rc.canWriteSharedArray(23, 0)) {
-                            rc.writeSharedArray(23, 0);
-                        }
-                        if (rc.canWriteSharedArray(24, 0)) {
-                            rc.writeSharedArray(24, 0);
-                        }
-                        if (rc.canWriteSharedArray(63, 0)) {
-                            rc.writeSharedArray(63, 0);
-                        }
-                    }
+                    burnEscortRecords(rc); //implement NEXT: make sure records are burned when flag is delivered
 
                     if (profession == 1) {
                         MapLocation randomLoc = actualSpawns[builderTarget];
@@ -390,7 +354,7 @@ public strictfp class RobotPlayer {
                                 }
                             }
                         }
-                    }
+                    } else {burnEscortRecords(rc);}
 
                     MapLocation[] crumbLocations = rc.senseNearbyCrumbs(-1);
                     if (profession != 3 && crumbLocations.length != 0){
@@ -512,7 +476,7 @@ public strictfp class RobotPlayer {
                             profession = 0; //scout returns to being an ordinary soldier
                         }
 
-                        rc.setIndicatorLine(rc.getLocation(), new MapLocation(scoutDest[0], scoutDest[1]), 0, 255, 0);
+                        //rc.setIndicatorLine(rc.getLocation(), new MapLocation(scoutDest[0], scoutDest[1]), 0, 255, 0);
                         Pathfinding.pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]));
                         scoutEnemyDetect(rc);
                     } else if (profession == 4) {
@@ -667,9 +631,16 @@ public strictfp class RobotPlayer {
 
         MapLocation moveTarget = null;
         boolean checkNullFlag = false;
+        boolean makeShiftEscort = false;
 
         MapLocation[] flagDetections = rc.senseBroadcastFlagLocations();
-        if (flagDetections.length != 0) {
+        if (mapSizeSmall && !(rc.readSharedArray(18) < 1)) {
+            moveTarget = new MapLocation(rc.readSharedArray(16), rc.readSharedArray(17)); makeShiftEscort = true;
+        } else if ((mapSizeSmall && !(rc.readSharedArray(21) < 1))) {
+            moveTarget = new MapLocation(rc.readSharedArray(19), rc.readSharedArray(20)); makeShiftEscort = true;
+        } else if ((mapSizeSmall && !(rc.readSharedArray(24) < 1))) {
+            moveTarget = new MapLocation(rc.readSharedArray(22), rc.readSharedArray(23)); makeShiftEscort = true;
+        } else if (flagDetections.length != 0) {
             moveTarget = flagDetections[0];
         } else if (!(rc.readSharedArray(14) < 1)) {
             moveTarget = new MapLocation(rc.readSharedArray(14), rc.readSharedArray(15)); checkNullFlag = true;
@@ -682,7 +653,7 @@ public strictfp class RobotPlayer {
         }
 
         if (moveTarget != null) {
-            rc.setIndicatorDot(moveTarget, 255, 0, 0);
+            rc.setIndicatorLine(rc.getLocation(), moveTarget, 255, 0, 0);
             Pathfinding.pathfind(rc, moveTarget);
 
             if (checkNullFlag) {
@@ -699,6 +670,14 @@ public strictfp class RobotPlayer {
             }
         } else {
             militaryMovement(rc);
+        }
+
+        if (makeShiftEscort) {
+            if (rc.getLocation().distanceSquaredTo(moveTarget) <= 20) {
+                if (rc.canHeal(moveTarget)) {
+                    rc.heal(moveTarget);
+                }
+            }
         }
 
         for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
@@ -724,4 +703,48 @@ public strictfp class RobotPlayer {
     }
 
     public static int scoutClamp(int n, int N) {if (n < 0) {return 0;} else if (n > N) {return N;} else {return n;}}
+
+    public static void burnEscortRecords(RobotController rc) throws GameActionException{
+        int myId = rc.getID();
+        if (rc.readSharedArray(18) == myId) {
+            if (rc.canWriteSharedArray(16, 0)) {
+                rc.writeSharedArray(16, 0);
+            }
+            if (rc.canWriteSharedArray(17, 0)) {
+                rc.writeSharedArray(17, 0);
+            }
+            if (rc.canWriteSharedArray(18, 0)) {
+                rc.writeSharedArray(18, 0);
+            }
+            if (rc.canWriteSharedArray(61, 0)) {
+                rc.writeSharedArray(61, 0);
+            }
+        } else if (rc.readSharedArray(21) == myId) {
+            if (rc.canWriteSharedArray(19, 0)) {
+                rc.writeSharedArray(19, 0);
+            }
+            if (rc.canWriteSharedArray(20, 0)) {
+                rc.writeSharedArray(20, 0);
+            }
+            if (rc.canWriteSharedArray(21, 0)) {
+                rc.writeSharedArray(21, 0);
+            }
+            if (rc.canWriteSharedArray(62, 0)) {
+                rc.writeSharedArray(62, 0);
+            }
+        } else if (rc.readSharedArray(24) == myId) {
+            if (rc.canWriteSharedArray(22, 0)) {
+                rc.writeSharedArray(22, 0);
+            }
+            if (rc.canWriteSharedArray(23, 0)) {
+                rc.writeSharedArray(23, 0);
+            }
+            if (rc.canWriteSharedArray(24, 0)) {
+                rc.writeSharedArray(24, 0);
+            }
+            if (rc.canWriteSharedArray(63, 0)) {
+                rc.writeSharedArray(63, 0);
+            }
+        }
+    }
 }
