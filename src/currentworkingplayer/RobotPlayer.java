@@ -34,7 +34,6 @@ public strictfp class RobotPlayer {
     static boolean goingAround = false;
 
     static Direction bugodir = null;
-    static MapLocation bugoBad = null; //place where bugo has to go around
 
     static int scoutNum;
     static int[] scoutDest;
@@ -346,7 +345,6 @@ public strictfp class RobotPlayer {
                         }
                         
                         if (allDone && rc.getCrumbs() >= 800 && builderTravelingTo == null) {
-                            System.out.println("Random building");
                             Direction dir = directions[rng.nextInt(directions.length)];
                             MapLocation nextLoc = rc.getLocation().add(dir);
                             if (rc.canMove(dir)){
@@ -354,7 +352,7 @@ public strictfp class RobotPlayer {
                             }
                             else if (rc.canAttack(nextLoc)){
                                 rc.attack(nextLoc);
-                                System.out.println("Builder had to take arms!");
+                                //System.out.println("Builder had to take arms!");
                             }
 
                             MapLocation prevLoc = rc.getLocation().subtract(dir);
@@ -366,7 +364,7 @@ public strictfp class RobotPlayer {
                         for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam())) {
                             if (rc.canHeal(robot.location)) {
                                 rc.heal(robot.location);
-                                System.out.println("Healer healed a robot!");
+                                //System.out.println("Healer healed a robot!");
                             }
                         }
                     } else if (profession == 3) {
@@ -543,7 +541,7 @@ public strictfp class RobotPlayer {
             MapLocation nextLoc = ml.location;
             if (rc.canAttack(nextLoc)){
                 rc.attack(nextLoc);
-                System.out.println("Healer/Soldier attacked!");
+                //System.out.println("Healer/Soldier attacked!");
             }
         }
     }
@@ -557,7 +555,7 @@ public strictfp class RobotPlayer {
             rc.fill(nextLoc);
         } else if (rc.canAttack(nextLoc)){
             rc.attack(nextLoc);
-            System.out.println("Healer/Soldier attacked!");
+            //System.out.println("Healer/Soldier attacked!");
         }
     }
 
@@ -565,37 +563,33 @@ public strictfp class RobotPlayer {
 
 
     public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
-        if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;} //debugging
+        //if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;} //debugging
 
         Direction dir = rc.getLocation().directionTo(destination);
-        if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
+        if (rc.canMove(dir)) {
             rc.move(dir);
             bugodir = null;
-            bugoBad = null;
             return;
         } else if (rc.canFill(rc.getLocation().add(dir))) {
             rc.fill(rc.getLocation().add(dir));
-            if (rc.canMove(dir) && !rc.getLocation().add(dir).equals(bugoBad)) {
+            if (rc.canMove(dir)) {
                 rc.move(dir);
                 bugodir = null;
-                bugoBad = null;
                 return;
             }
         } else {
             if (bugodir == null) {
-                bugodir = dir;
+                bugodir = dir.rotateLeft();
             }
 
-            for (int i = 0; i < 8; i++) {
-                if (rc.canMove(bugodir) && !rc.getLocation().add(bugodir).equals(bugoBad)) {
-                    bugoBad = rc.getLocation();
+            for (int i = 0; i < 7; i++) {
+                if (rc.canMove(bugodir)) {
                     rc.move(bugodir);
                     bugodir = bugodir.rotateRight();
                     return;
                 } else if (rc.canFill(rc.getLocation().add(bugodir))) {
                     rc.fill(rc.getLocation().add(bugodir));
                     if (rc.canMove(bugodir)) {
-                        bugoBad = rc.getLocation();
                         rc.move(bugodir);
                         bugodir = bugodir.rotateRight();
                         return;
