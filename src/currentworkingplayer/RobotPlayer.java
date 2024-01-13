@@ -154,7 +154,6 @@ public strictfp class RobotPlayer {
         }
 
         while (true) {
-            Pathfinding.updateTurn();
             if (profession == 3) {
                 boolean has0 = false;
                 for (int i = 8; i < 12; i++) {

@@ -2,7 +2,6 @@ package currentworkingplayer;
 
 import battlecode.common.*;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 
 
@@ -16,45 +15,18 @@ public strictfp class Pathfinding {
     private static HashSet<MapLocation> line = null;
     private static int obstacleStartDist = 0;
 
-    private static ArrayList<MapLocation> lastMoves = new ArrayList<>();
-    private static int bugTwoCounter = -1;
-
     public static void resetBug() {
-        return;
-        /*bugstate = 0;
+        bugstate = 0;
         //closestObstacle = null;
         //closestObstacleDist = 99999;
         bugDir = null;
         prevDest = null;
         line = null;
         obstacleStartDist = 0;
-        lastMoves = new ArrayList<>();
-        bugTwoCounter = -1;**/
-    }
-
-    public static void updateTurn() {
-        if (bugTwoCounter > 0) {
-            bugTwoCounter--;
-        } else if (bugTwoCounter == 0) {
-            bugTwoCounter = -1;
-        }
     }
 
     public static void pathfind(RobotController rc, MapLocation destination) throws GameActionException{
-        if (bugTwoCounter > 0) {
-            bugTwo(rc, destination);
-        } else {
-            bugZero(rc, destination);
-        }
-
-        if (lastMoves.contains(rc.getLocation())) {
-            //bugTwoCounter = 7; //number of turns to use bugTwo for (bugZero is failing for some reason)
-        }
-
-        lastMoves.add(rc.getLocation());
-        if (lastMoves.size() > 10) {
-            lastMoves.remove(0);
-        }
+        bugZero(rc, destination);
     }
 
     public static void bugZero(RobotController rc, MapLocation destination) throws GameActionException{
