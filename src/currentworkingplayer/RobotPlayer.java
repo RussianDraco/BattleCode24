@@ -1,7 +1,6 @@
 package currentworkingplayer;
 
 import battlecode.common.*;
-import javafx.scene.shape.Path;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -13,17 +12,17 @@ import java.util.Set;
 
 //later, bit-shifting should be implemented in order to use shared array better
 /*Shared array allocation
-0 - next builder target
+
 1,2,3,4,5,6 - enemy spawn locations
 7 - number of flags collected
-8,9,10 - soldiers report on whther enemy spawn should be visited ((1,2), (3,4), (5,6)) respectively {1 = no, 0 = yes} //should probably create a quality system later maybe
-11,12,13 - builders done with base
+8,9,10 - soldiers report on whether enemy spawn should be visited ((1,2), (3,4), (5,6)) respectively {1 = no, 0 = yes} //should probably create a quality system later maybe
+
 14,15 - soldier found enemy with flag
 16,17,18,19,20,21,22,23,24 - potential escort locations + flag escorter id: (x,y,id)
 
 
 61 - temporary int for escort assignment 1
-62 - temporary int for escort assignment 2
+62 - temporary int for guardian creation || temporary int for escort assignment 2
 63 - temporary int for scout creation || temporary int for escort assignment 3
 **/
 public strictfp class RobotPlayer {
@@ -31,11 +30,10 @@ public strictfp class RobotPlayer {
 
     static Random rng;
 
-    static int profession; // 0 = soldier, 1 = builder, 2 = healer, 3 - scout(temp profession -> soldier), 4 - escort(temp profession -> soldier/healer)
-    static int builderTarget; // which spawn point he builds at
-    static boolean[] buildProgess = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
+    static int profession; // 0 = soldier, 1 = guardian, 2 = healer, 3 - scout(temp profession -> soldier), 4 - escort(temp profession -> soldier/healer)
     static boolean recordedBuildDone = false;
-    static MapLocation builderTravelingTo = null;
+
+    static int guardianId = -1;
 
     static boolean goingAround = false;
 
@@ -47,6 +45,11 @@ public strictfp class RobotPlayer {
     static boolean isTeamA;
 
     static int escortFollowingIndex = -1; //the index a escort is following(18, 21, 24)
+
+    static MapLocation militaryDest = null;
+    static boolean militaryEngineer = false;
+
+    static MapLocation mapCenter = null;
 
     static int SMALL_MAP_MIN = 1200; //min map area for small map
     static boolean mapSizeSmall = false; //the current player plays badly on small  maps due to large enemy concentrations, small maps will have better escort protection
@@ -66,10 +69,18 @@ public strictfp class RobotPlayer {
     public static void run(RobotController rc) throws GameActionException {
         rng = new Random(rc.getID());
 
+        int guardianInt = rc.readSharedArray(62);
+        if (guardianInt < 3) {
+            if (rc.canWriteSharedArray(62, guardianInt + 1)) {
+                rc.writeSharedArray(62, guardianInt + 1);
+            }
+            
+            profession = 1;
+            guardianId = guardianInt;
+        }
+
         isTeamA = (rc.getTeam() == Team.A);
         if ((rc.getMapWidth() * rc.getMapHeight()) <= SMALL_MAP_MIN) {mapSizeSmall = true;}
-
-        boolean isBuilder = (rng.nextFloat() > 0.85); // is a builder
 
         if (rc.readSharedArray(8) != 0) {
             if (rc.canWriteSharedArray(8, 0)) {
@@ -83,27 +94,13 @@ public strictfp class RobotPlayer {
             }
         }
 
-        if (isBuilder) {
-            if (rc.readSharedArray(0) == 0) {
-                builderTarget = 0;
-                if (rc.canWriteSharedArray(0, 1)) {
-                    rc.writeSharedArray(0, 1);
-                }
-            } else {
-                builderTarget = rc.readSharedArray(0) % 3;
-                if (rc.canWriteSharedArray(0, builderTarget + 1)) {
-                    rc.writeSharedArray(0, builderTarget + 1);
-                }
-            }
-        }
-
+        mapCenter = new MapLocation(Math.round(rc.getMapWidth()/2), Math.round(rc.getMapHeight()/2));
         MapLocation[] spawnLocs = rc.getAllySpawnLocations();
         MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
         spawnLocs = null;
 
-        if (isBuilder) {
-            profession = 1;
-        } else {if (rng.nextFloat() >= 0.5) {profession = 2;} else {
+        if (!(profession == 1)) {
+            if (rng.nextFloat() >= 0.5) {profession = 2;} else {
             if (rc.readSharedArray(63) < 7) { // 7 scouts
                 profession = 3;
                 scoutNum = rc.readSharedArray(63);
@@ -113,8 +110,10 @@ public strictfp class RobotPlayer {
                 }
             } else {
                 profession = 0;
+                militaryEngineer = (rng.nextFloat() >= 0.9);
             }
-        }}
+            }
+        }
 
         if (profession == 3) {
             float spawnAvgX = (actualSpawns[0].x + actualSpawns[1].x + actualSpawns[2].x) / 3;
@@ -190,12 +189,11 @@ public strictfp class RobotPlayer {
                 if (!rc.isSpawned()){
                     Pathfinding.resetBug();
 
-                    burnEscortRecords(rc); //implement NEXT: make sure records are burned when flag is delivered
+                    burnEscortRecords(rc);
 
                     if (profession == 1) {
-                        MapLocation randomLoc = actualSpawns[builderTarget];
-                        if (rc.canSpawn(randomLoc)){
-                            rc.spawn(randomLoc);
+                        if (rc.canSpawn(actualSpawns[guardianId])) {
+                            rc.spawn(actualSpawns[guardianId]);
                         }
                     } else {
                         spawnLocs = rc.getAllySpawnLocations();
@@ -209,7 +207,7 @@ public strictfp class RobotPlayer {
                     if (profession == 0) {
                         rc.setIndicatorString("I am a soldier!");
                     } else if (profession == 1) {
-                        rc.setIndicatorString("I am a builder!");
+                        rc.setIndicatorString("I am a guardian!");
                     } else if (profession == 2) {
                         rc.setIndicatorString("I am a healer!");
                     } else if (profession == 3) {
@@ -361,92 +359,34 @@ public strictfp class RobotPlayer {
 
                     MapLocation[] crumbLocations = rc.senseNearbyCrumbs(-1);
                     if (profession != 3 && crumbLocations.length != 0){
-                        System.out.println("I found a crumb!");
                         Direction dir = rc.getLocation().directionTo(crumbLocations[0]);
                         if (rc.canMove(dir)) rc.move(dir);
                     }
 
-                    if (profession == 1 && rc.getCrumbs() >= 350) {
-                        updateBuildProgress(rc, actualSpawns);
+                    if (profession == 1) {
+                        if (rc.getRoundNum() > GameConstants.SETUP_ROUNDS && rc.getLocation().equals(actualSpawns[guardianId])) {
+                            MapLocation[] buildLocs = {rc.getLocation().add(Direction.NORTH), rc.getLocation().add(Direction.NORTHEAST), rc.getLocation().add(Direction.EAST), rc.getLocation().add(Direction.SOUTHEAST), rc.getLocation().add(Direction.SOUTH), rc.getLocation().add(Direction.SOUTHWEST), rc.getLocation().add(Direction.WEST), rc.getLocation().add(Direction.NORTHWEST)};
 
-                        MapLocation ml = actualSpawns[builderTarget];
-                        MapLocation[] trapLocs = {ml.translate(-2, 2), ml.translate(-1, 2), ml.translate(0, 2), ml.translate(1, 2), ml.translate(2, 2), ml.translate(2, 1), ml.translate(2, 0), ml.translate(2, -1), ml.translate(2, -2), ml.translate(1, -2), ml.translate(0, -2), ml.translate(-1, -2), ml.translate(-2, -2), ml.translate(-2, -1), ml.translate(-2, 0), ml.translate(-2, 1)};
-                        
-                        int n = 0;
-
-                        for (MapLocation trapLoc : trapLocs) {
-                            if (buildProgess[n]) {n += 1; continue;}
-
-                            if (rc.getLocation().distanceSquaredTo(trapLoc) <= 2) {
-                                if (rc.senseMapInfo(trapLoc).getTrapType() == TrapType.NONE) {
-                                    if (rc.canBuild(TrapType.EXPLOSIVE, trapLoc)) {
-                                        rc.build(TrapType.EXPLOSIVE, trapLoc);
-                                        buildProgess[n] = true;
-                                    } else {buildProgess[n] = true;}
-                                } else {buildProgess[n] = true; n += 1; continue;}
-                            } else {
-                                Direction tdir = rc.getLocation().directionTo(trapLoc);
-                                if (rc.canMove(tdir)) {
-                                    rc.move(tdir);
+                            for (int i = 0; i < buildLocs.length; i++) {
+                                if (rc.canBuild(TrapType.EXPLOSIVE, buildLocs[i])) {
+                                    rc.build(TrapType.EXPLOSIVE, buildLocs[i]);
+                                    break;
                                 }
                             }
-                            n += 1;
                         }
 
-                        boolean allDone = true;
-                        for (boolean b : buildProgess) {if (!b) {allDone = false; break;}}
-
-                        if (allDone) {
-                            if (builderTravelingTo != null) {
-                                Pathfinding.pathfind(rc, builderTravelingTo, null);
-
-                                if (rc.getLocation().equals(builderTravelingTo)) {
-                                    builderTravelingTo = null;
+                        if (!tacticalAttack(rc)) {
+                            if (!rc.getLocation().equals(actualSpawns[guardianId])) {
+                                if (rc.canMove(rc.getLocation().directionTo(actualSpawns[guardianId]))) {
+                                    rc.move(rc.getLocation().directionTo(actualSpawns[guardianId]));
                                 }
-                            }
 
-                            if (!recordedBuildDone) {
-                                if (rc.canWriteSharedArray(builderTarget + 11, 1)) {
-                                    rc.writeSharedArray(builderTarget + 11, 1);
+                                RobotInfo[] nearbyEnems = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
+                                for (RobotInfo ri : nearbyEnems) {
+                                    if (rc.canAttack(ri.location)) {
+                                        rc.attack(ri.location);
+                                    }
                                 }
-                                recordedBuildDone = true;
-                            }
-
-                            if (rc.readSharedArray(11) != 1) {
-                                builderTravelingTo = actualSpawns[0];
-                                builderTarget = 0;
-                                allDone = false;
-                                for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
-                                recordedBuildDone = false;
-                            } else if (rc.readSharedArray(12) != 1) {
-                                builderTravelingTo = actualSpawns[1];
-                                builderTarget = 1;
-                                allDone = false;
-                                for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
-                                recordedBuildDone = false;
-                            } else if (rc.readSharedArray(13) != 1) {
-                                builderTravelingTo = actualSpawns[2];
-                                builderTarget = 2;
-                                allDone = false;
-                                for (int j = 0; j < buildProgess.length; j++) {buildProgess[j] = false;}
-                                recordedBuildDone = false;
-                            }
-                        }
-                        
-                        if (allDone && rc.getCrumbs() >= 800 && builderTravelingTo == null) {
-                            Direction dir = directions[rng.nextInt(directions.length)];
-                            MapLocation nextLoc = rc.getLocation().add(dir);
-                            if (rc.canMove(dir)){
-                                rc.move(dir);
-                            }
-                            else if (rc.canAttack(nextLoc)){
-                                rc.attack(nextLoc);
-                                //System.out.println("Builder had to take arms!");
-                            }
-
-                            MapLocation prevLoc = rc.getLocation().subtract(dir);
-                            if (rc.canBuild(TrapType.EXPLOSIVE, prevLoc) && rng.nextInt() % 11 == 1) {
-                                rc.build(TrapType.EXPLOSIVE, prevLoc);
                             }
                         }
                     } else if (profession == 2) {
@@ -479,12 +419,7 @@ public strictfp class RobotPlayer {
                                 }
                             }
 
-                            for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
-                                MapLocation nextLoc = ml.location;
-                                if (rc.canAttack(nextLoc)){
-                                    rc.attack(nextLoc);
-                                }
-                            }
+                            tacticalAttack(rc);
                         }
                     }
 
@@ -559,22 +494,6 @@ public strictfp class RobotPlayer {
         }
     }
 
-    public static void updateBuildProgress(RobotController rc, MapLocation[] actualSpawns) throws GameActionException{
-        MapLocation ml = actualSpawns[builderTarget];
-        MapLocation[] trapLocs = {ml.translate(-2, 2), ml.translate(-1, 2), ml.translate(0, 2), ml.translate(1, 2), ml.translate(2, 2), ml.translate(2, 1), ml.translate(2, 0), ml.translate(2, -1), ml.translate(2, -2), ml.translate(1, -2), ml.translate(0, -2), ml.translate(-1, -2), ml.translate(-2, -2), ml.translate(-2, -1), ml.translate(-2, 0), ml.translate(-2, 1)};
-                        
-        int i = 0;
-        for (MapLocation trapLoc : trapLocs) {
-            if (!buildProgess[i]) {i += 1; continue;}
-            if (rc.getLocation().distanceSquaredTo(trapLoc) <= GameConstants.VISION_RADIUS_SQUARED) {
-                if (rc.senseMapInfo(trapLoc).getTrapType() == TrapType.NONE) {
-                    buildProgess[i] = false;
-                }
-            }
-            i += 1;
-        }
-    }
-
     public static void updateMilitaryRecords(RobotController rc) throws GameActionException{
         MapInfo mi = rc.senseMapInfo(rc.getLocation());
         if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA))) {
@@ -615,11 +534,57 @@ public strictfp class RobotPlayer {
     }
 
     public static void militaryPathfinding(RobotController rc) throws GameActionException{
-        if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS) {
-            if (rc.getRoundNum() > (GameConstants.SETUP_ROUNDS - Math.round((rc.getMapWidth()/2)*1.2))) {
-                Pathfinding.pathfind(rc, new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 2) - 1), null);
+        if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS + 4) {
+            if (rc.getRoundNum() >= (GameConstants.SETUP_ROUNDS + 2)) {
+                tacticalAttack(rc);
+                return;
+            } else if (rc.getRoundNum() >= GameConstants.SETUP_ROUNDS) {
+                if (!tacticalAttack(rc)) {
+                    Direction dir = rc.getLocation().directionTo(mapCenter).opposite();
+                    if (rc.canMove(dir)) {
+                        rc.move(dir);
+                    }
+                }
                 return;
             }
+        }
+
+        if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS) {
+            int moveBackOffset;
+            if (!militaryEngineer) {
+                moveBackOffset = (int) Math.round((rc.getMapWidth()/2)*1.5);
+            } else {
+                moveBackOffset = (int) Math.round((rc.getMapWidth()/2)*5);
+            }
+            if (rc.getRoundNum() > (GameConstants.SETUP_ROUNDS - moveBackOffset)) {
+                if (militaryDest == null) {
+                    if (rng.nextFloat() >= 0.5) {
+                        militaryDest = new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 3) - 1);
+                    } else {
+                        militaryDest = new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round((rc.getMapHeight() / 3) * 2) + 1);
+                    }
+                }
+
+                Pathfinding.pathfind(rc, militaryDest, null);
+            } else {militaryMovement(rc);}
+
+            if (militaryEngineer) {
+                if (rc.getRoundNum() >= (GameConstants.SETUP_ROUNDS - 50)) {
+                    MapLocation myLoc = rc.getLocation();
+                    for (MapLocation tLoc : new MapLocation[]{myLoc.add(Direction.EAST), myLoc.add(Direction.NORTHEAST), myLoc.add(Direction.NORTHWEST), myLoc, myLoc.add(Direction.NORTH), myLoc.add(Direction.SOUTH), myLoc.add(Direction.SOUTHEAST), myLoc.add(Direction.SOUTHWEST), myLoc.add(Direction.WEST)}) {
+                        if (rng.nextFloat() >= 0.7) {
+                            if (rc.canBuild(TrapType.STUN, tLoc)) {
+                                rc.build(TrapType.STUN, tLoc);
+                            }
+                        } else {
+                            if (rc.canBuild(TrapType.EXPLOSIVE, tLoc)) {
+                                rc.build(TrapType.EXPLOSIVE, tLoc);
+                            }
+                        }
+                    }
+                }
+            }
+            return;
         }
 
         MapInfo mi = rc.senseMapInfo(rc.getLocation());
@@ -631,6 +596,8 @@ public strictfp class RobotPlayer {
 
         scoutEnemyDetect(rc);
         updateMilitaryRecords(rc);
+
+        if (tacticalAttack(rc)) {return;}
 
         MapLocation moveTarget = null;
         boolean checkNullFlag = false;
@@ -686,14 +653,31 @@ public strictfp class RobotPlayer {
                 }
             }
         }
+    }
 
-        for (RobotInfo ml : rc.senseNearbyRobots(-1, rc.getTeam().opponent())) {
-            MapLocation nextLoc = ml.location;
-            if (rc.canAttack(nextLoc)){
-                rc.attack(nextLoc);
-                //System.out.println("Healer/Soldier attacked!");
+    public static boolean tacticalAttack(RobotController rc) throws GameActionException{
+        RobotInfo[] nearbyEnems = rc.senseNearbyRobots(-1, rc.getTeam().opponent());
+
+        MapLocation attacked = null;
+
+        if (nearbyEnems.length != 0) {
+            for (RobotInfo ri : nearbyEnems) {
+                if (rc.canAttack(ri.location)) {
+                    rc.attack(ri.location);
+                    attacked = ri.location;
+                    break;
+                }
+            }
+        } else {return false;}
+
+        if (attacked != null) {
+            Direction moveAway = rc.getLocation().directionTo(attacked).opposite();
+            if (rc.canMove(moveAway)) {
+                rc.move(moveAway);
+                return true;
             }
         }
+        return false;
     }
 
     public static void militaryMovement(RobotController rc) throws GameActionException{

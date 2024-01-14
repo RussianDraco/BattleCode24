@@ -4,8 +4,6 @@ import battlecode.common.*;
 
 import java.util.HashSet;
 
-import com.google.flatbuffers.FlexBuffers.Map;
-
 
 public strictfp class Pathfinding {
     private static int bugstate = 0; // 0 - head towards destination, 1 - bug around obstacle
