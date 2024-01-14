@@ -1,6 +1,8 @@
 package currentworkingplayer;
 
 import battlecode.common.*;
+import javafx.scene.shape.Path;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -164,6 +166,7 @@ public strictfp class RobotPlayer {
         }
 
         while (true) {
+            Pathfinding.Update(rc, rc.getLocation());
             if (profession == 3) {
                 boolean has0 = false;
                 for (int i = 8; i < 12; i++) {
@@ -286,7 +289,7 @@ public strictfp class RobotPlayer {
                             }
                         }
 
-                        Pathfinding.pathfind(rc, closestLoc);
+                        Pathfinding.pathfind(rc, closestLoc, null);
 
                         //escort (x,y)s - 16,17 19,20 22,23
                         //escort ids - 18, 21, 24
@@ -363,24 +366,6 @@ public strictfp class RobotPlayer {
                         if (rc.canMove(dir)) rc.move(dir);
                     }
 
-                    if (profession == 0) {
-                        int[] possibleEscorts = {18, 21, 24};
-                        int[] escortSetters = {61, 62, 63};
-
-                        for (int id = 0; id < 3; id++) {
-                            if (!(rc.readSharedArray(possibleEscorts[id]) < 0)) {
-                                int escortSet = rc.readSharedArray(escortSetters[id]);
-                                if (escortSet < 4) {
-                                    profession = 4;
-                                    escortFollowingIndex = possibleEscorts[id];
-                                    if (rc.canWriteSharedArray(escortSetters[id], escortSet + 1)) {
-                                        rc.writeSharedArray(escortSetters[id], escortSet + 1);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     if (profession == 1 && rc.getCrumbs() >= 350) {
                         updateBuildProgress(rc, actualSpawns);
 
@@ -413,7 +398,7 @@ public strictfp class RobotPlayer {
 
                         if (allDone) {
                             if (builderTravelingTo != null) {
-                                Pathfinding.pathfind(rc, builderTravelingTo);
+                                Pathfinding.pathfind(rc, builderTravelingTo, null);
 
                                 if (rc.getLocation().equals(builderTravelingTo)) {
                                     builderTravelingTo = null;
@@ -477,7 +462,7 @@ public strictfp class RobotPlayer {
                         }
 
                         //rc.setIndicatorLine(rc.getLocation(), new MapLocation(scoutDest[0], scoutDest[1]), 0, 255, 0);
-                        Pathfinding.pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]));
+                        Pathfinding.pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]), null);
                         scoutEnemyDetect(rc);
                     } else if (profession == 4) {
                         boolean terminated = false;
@@ -486,7 +471,7 @@ public strictfp class RobotPlayer {
                         if (!terminated) {
                             MapLocation escortee = new MapLocation(rc.readSharedArray(escortFollowingIndex - 2), rc.readSharedArray(escortFollowingIndex - 1));
 
-                            Pathfinding.pathfind(rc, escortee);
+                            Pathfinding.pathfind(rc, escortee, null);
 
                             if (rc.getLocation().distanceSquaredTo(escortee) <= 20) {
                                 if (rc.canHeal(escortee)) {
@@ -498,6 +483,24 @@ public strictfp class RobotPlayer {
                                 MapLocation nextLoc = ml.location;
                                 if (rc.canAttack(nextLoc)){
                                     rc.attack(nextLoc);
+                                }
+                            }
+                        }
+                    }
+
+                    if (profession == 0 || profession == 2) {
+                        int[] possibleEscorts = {18, 21, 24};
+                        int[] escortSetters = {61, 62, 63};
+
+                        for (int id = 0; id < 3; id++) {
+                            if (!(rc.readSharedArray(possibleEscorts[id]) < 0)) {
+                                int escortSet = rc.readSharedArray(escortSetters[id]);
+                                if (escortSet < 5) {
+                                    profession = 4;
+                                    escortFollowingIndex = possibleEscorts[id];
+                                    if (rc.canWriteSharedArray(escortSetters[id], escortSet + 1)) {
+                                        rc.writeSharedArray(escortSetters[id], escortSet + 1);
+                                    }
                                 }
                             }
                         }
@@ -614,7 +617,7 @@ public strictfp class RobotPlayer {
     public static void militaryPathfinding(RobotController rc) throws GameActionException{
         if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS) {
             if (rc.getRoundNum() > (GameConstants.SETUP_ROUNDS - Math.round((rc.getMapWidth()/2)*1.2))) {
-                Pathfinding.pathfind(rc, new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 2) - 1));
+                Pathfinding.pathfind(rc, new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 2) - 1), null);
                 return;
             }
         }
@@ -654,7 +657,11 @@ public strictfp class RobotPlayer {
 
         if (moveTarget != null) {
             rc.setIndicatorLine(rc.getLocation(), moveTarget, 255, 0, 0);
-            Pathfinding.pathfind(rc, moveTarget);
+            if (makeShiftEscort) {
+                Pathfinding.pathfind(rc, moveTarget, Pathfinding.calculateNextMove(rc, moveTarget, findEscortDest(rc, moveTarget)));
+            } else {
+                Pathfinding.pathfind(rc, moveTarget, null);
+            }
 
             if (checkNullFlag) {
                 if (rc.getLocation().equals(moveTarget)) {
@@ -746,5 +753,20 @@ public strictfp class RobotPlayer {
                 rc.writeSharedArray(63, 0);
             }
         }
+    }
+
+    public static MapLocation findEscortDest(RobotController rc, MapLocation scoutCoords) throws GameActionException{            
+        MapLocation closestLoc = null;
+        int closestDist = 999999;
+
+        for (MapLocation ml : rc.getAllySpawnLocations()) {
+            int d = scoutCoords.distanceSquaredTo(ml);
+            if (d < closestDist) {
+                closestDist = d;
+                closestLoc = ml;
+            }
+        }
+
+        return closestLoc;
     }
 }
