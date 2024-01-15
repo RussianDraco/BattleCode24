@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import org.apache.commons.collections.Factory;
+
 
 //later, bit-shifting should be implemented in order to use shared array better
 /*Shared array allocation
@@ -21,7 +23,7 @@ import java.util.Set;
 16,17,18,19,20,21,22,23,24 - potential escort locations + flag escorter id: (x,y,id)
 
 
-61 - temporary int for escort assignment 1
+61 - temporary int for military engineer assignment || temporary int for escort assignment 1
 62 - temporary int for guardian creation || temporary int for escort assignment 2
 63 - temporary int for scout creation || temporary int for escort assignment 3
 **/
@@ -71,7 +73,11 @@ public strictfp class RobotPlayer {
 
         int guardianInt = rc.readSharedArray(62);
         if (guardianInt < 3) {
-            if (rc.canWriteSharedArray(62, guardianInt + 1)) {
+            if (guardianInt == 2) {
+                if (rc.canWriteSharedArray(62, 100)) {
+                    rc.writeSharedArray(62, 100);
+                }
+            } else if (rc.canWriteSharedArray(62, guardianInt + 1)) {
                 rc.writeSharedArray(62, guardianInt + 1);
             }
             
@@ -105,12 +111,16 @@ public strictfp class RobotPlayer {
                 profession = 3;
                 scoutNum = rc.readSharedArray(63);
 
+                if (rc.readSharedArray(63) == 6) {
+                    if (rc.canWriteSharedArray(63, 100)) {
+                        rc.writeSharedArray(63, 100);
+                    }
+                }
                 if (rc.canWriteSharedArray(63, rc.readSharedArray(63) + 1)) {
                     rc.writeSharedArray(63, rc.readSharedArray(63) + 1);
                 }
             } else {
                 profession = 0;
-                militaryEngineer = (rng.nextFloat() >= 0.9);
             }
             }
         }
@@ -429,7 +439,7 @@ public strictfp class RobotPlayer {
 
                         for (int id = 0; id < 3; id++) {
                             if (!(rc.readSharedArray(possibleEscorts[id]) < 0)) {
-                                int escortSet = rc.readSharedArray(escortSetters[id]);
+                                int escortSet = rc.readSharedArray(escortSetters[id]); if (escortSet == 100) {escortSet = 0;}
                                 if (escortSet < 5) {
                                     profession = 4;
                                     escortFollowingIndex = possibleEscorts[id];
@@ -533,6 +543,36 @@ public strictfp class RobotPlayer {
         }
     }
 
+    private static MapLocation computeStartingMilitaryDest(RobotController rc) throws GameActionException{
+        MapLocation[] spawnLocs = rc.getAllySpawnLocations();
+        MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
+        float spawnAvgX = (actualSpawns[0].x + actualSpawns[1].x + actualSpawns[2].x) / 3;
+        float spawnAvgY = (actualSpawns[0].y + actualSpawns[1].y + actualSpawns[2].y) / 3;
+
+        boolean playerCornerNormal = false;
+
+        if (spawnAvgX > rc.getMapWidth() / 2) {
+            if (spawnAvgY > rc.getMapHeight() / 2) {
+                playerCornerNormal = false;
+            } else {
+                playerCornerNormal = true;
+            }
+        } else {
+            if (spawnAvgY > rc.getMapHeight() / 2) {
+                playerCornerNormal = true;
+            } else {
+                playerCornerNormal = false;
+            }
+        }
+
+        int a = rng.nextInt(rc.getMapWidth());
+        if (playerCornerNormal) {
+            return (new MapLocation(a, Math.round((rc.getMapHeight()/rc.getMapWidth()) * a)));
+        } else {
+            return (new MapLocation(a, Math.round(rc.getMapHeight() - ((rc.getMapHeight()/rc.getMapWidth()) * a))));
+        }
+    }
+    
     public static void militaryPathfinding(RobotController rc) throws GameActionException{
         if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS + 4) {
             if (rc.getRoundNum() >= (GameConstants.SETUP_ROUNDS + 2)) {
@@ -550,26 +590,44 @@ public strictfp class RobotPlayer {
         }
 
         if (rc.getRoundNum() < GameConstants.SETUP_ROUNDS) {
-            int moveBackOffset;
-            if (!militaryEngineer) {
-                moveBackOffset = (int) Math.round((rc.getMapWidth()/2)*1.5);
-            } else {
-                moveBackOffset = (int) Math.round((rc.getMapWidth()/2)*5);
-            }
-            if (rc.getRoundNum() > (GameConstants.SETUP_ROUNDS - moveBackOffset)) {
+            if (rc.getRoundNum() > (GameConstants.SETUP_ROUNDS - Math.max(rc.getMapWidth(), rc.getMapHeight()))) {
                 if (militaryDest == null) {
-                    if (rng.nextFloat() >= 0.5) {
-                        militaryDest = new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round(rc.getMapHeight() / 3) - 1);
-                    } else {
-                        militaryDest = new MapLocation(Math.round(rc.getMapWidth() / 2) - 1, Math.round((rc.getMapHeight() / 3) * 2) + 1);
-                    }
+                    militaryDest = computeStartingMilitaryDest(rc);
                 }
 
                 Pathfinding.pathfind(rc, militaryDest, null);
             } else {militaryMovement(rc);}
 
+            if (rc.senseNearbyRobots(-1, rc.getTeam().opponent()).length != 0) {
+                int mEngSet = rc.readSharedArray(61);
+                if (mEngSet < 7) {
+                    if (mEngSet == 6) {
+                        if (rc.canWriteSharedArray(61, 100)) {
+                            rc.writeSharedArray(61, 100);
+                        }
+                    } else if (rc.canWriteSharedArray(61, mEngSet + 1)) {
+                        rc.writeSharedArray(61, mEngSet + 1);
+                    }
+                    militaryEngineer = true;
+                } 
+            } else {
+                if (militaryEngineer) {
+                    int mEngSet = rc.readSharedArray(61);
+                    if (mEngSet == 100) {
+                        if (rc.canWriteSharedArray(61, 6)) {
+                            rc.writeSharedArray(61, 6);
+                        }
+                    } else {
+                        if (rc.canWriteSharedArray(61, mEngSet - 1)) {
+                            rc.writeSharedArray(61, mEngSet - 1);
+                        }
+                    }
+                    militaryEngineer = false;
+                }
+            }
+
             if (militaryEngineer) {
-                if (rc.getRoundNum() >= (GameConstants.SETUP_ROUNDS - 50)) {
+                if (rc.getRoundNum() >= (GameConstants.SETUP_ROUNDS - 20)) {
                     MapLocation myLoc = rc.getLocation();
                     for (MapLocation tLoc : new MapLocation[]{myLoc.add(Direction.EAST), myLoc.add(Direction.NORTHEAST), myLoc.add(Direction.NORTHWEST), myLoc, myLoc.add(Direction.NORTH), myLoc.add(Direction.SOUTH), myLoc.add(Direction.SOUTHEAST), myLoc.add(Direction.SOUTHWEST), myLoc.add(Direction.WEST)}) {
                         if (rng.nextFloat() >= 0.7) {
