@@ -374,7 +374,7 @@ public strictfp class RobotPlayer {
                     }
 
                     if (profession == 1) {
-                        if (rc.getRoundNum() > GameConstants.SETUP_ROUNDS && rc.getLocation().equals(actualSpawns[guardianId])) {
+                        if (rc.getRoundNum() > GameConstants.SETUP_ROUNDS && rc.getLocation().equals(actualSpawns[guardianId]) && rc.senseNearbyFlags(8, rc.getTeam()).length != 0) {
                             MapLocation[] buildLocs = {rc.getLocation().add(Direction.NORTH), rc.getLocation().add(Direction.NORTHEAST), rc.getLocation().add(Direction.EAST), rc.getLocation().add(Direction.SOUTHEAST), rc.getLocation().add(Direction.SOUTH), rc.getLocation().add(Direction.SOUTHWEST), rc.getLocation().add(Direction.WEST), rc.getLocation().add(Direction.NORTHWEST)};
 
                             for (int i = 0; i < buildLocs.length; i++) {
