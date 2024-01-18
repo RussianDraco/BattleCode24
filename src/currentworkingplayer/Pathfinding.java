@@ -65,12 +65,12 @@ public strictfp class Pathfinding {
         return bugZeroNextMove(rc, start, destination);
     }
 
-    public static void pathfind(RobotController rc, MapLocation destination, MapLocation illegalLoc) throws GameActionException{
+    public static void pathfind(RobotController rc, MapLocation destination, MapLocation illegalLoc, boolean holdingFlag) throws GameActionException{
         if (bugTwoTurnCount != -1) {
             bugTwo(rc, destination);
             bugTwoTurnCount--;
         } else {
-            bugZero(rc, destination, illegalLoc);
+            bugZero(rc, destination, illegalLoc, holdingFlag);
         }
     }
 
@@ -109,7 +109,7 @@ public strictfp class Pathfinding {
         }
         return null;
     }
-    public static void bugZero(RobotController rc, MapLocation destination, MapLocation illegalLoc) throws GameActionException{
+    public static void bugZero(RobotController rc, MapLocation destination, MapLocation illegalLoc, boolean holdingFlag) throws GameActionException{
         if (illegalLoc == null) {
 
             if (rc.getLocation().equals(destination)) {System.out.println("REQUESTING PATHFINDING TO CURRENT LOC. " + destination.x + " " + destination.y); return;}
@@ -117,7 +117,7 @@ public strictfp class Pathfinding {
 
             if (rc.canMove(bugDir)) {
                 rc.move(bugDir);
-            } else if (rc.canFill(rc.getLocation().add(bugDir))) {
+            } else if (rc.canFill(rc.getLocation().add(bugDir)) && !holdingFlag) {
                 rc.fill(rc.getLocation().add(bugDir));
                 if (rc.canMove(bugDir)) {
                     rc.move(bugDir);
@@ -151,7 +151,7 @@ public strictfp class Pathfinding {
 
             if (rc.canMove(bugDir) && !rc.getLocation().add(bugDir).equals(illegalLoc)) {
                 rc.move(bugDir);
-            } else if (rc.canFill(rc.getLocation().add(bugDir))) {
+            } else if (rc.canFill(rc.getLocation().add(bugDir)) && !holdingFlag) {
                 rc.fill(rc.getLocation().add(bugDir));
                 if (rc.canMove(bugDir) && !rc.getLocation().add(bugDir).equals(illegalLoc)) {
                     rc.move(bugDir);

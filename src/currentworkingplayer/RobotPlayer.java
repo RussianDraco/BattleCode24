@@ -5,11 +5,10 @@ import battlecode.common.*;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-
-import org.apache.commons.collections.Factory;
 
 
 //later, bit-shifting should be implemented in order to use shared array better
@@ -44,8 +43,6 @@ public strictfp class RobotPlayer {
     static int scoutNum;
     static int[] scoutDest;
 
-    static boolean isTeamA;
-
     static int escortFollowingIndex = -1; //the index a escort is following(18, 21, 24)
 
     static MapLocation militaryDest = null;
@@ -55,6 +52,8 @@ public strictfp class RobotPlayer {
 
     static int SMALL_MAP_MIN = 1200; //min map area for small map
     static boolean mapSizeSmall = false; //the current player plays badly on small  maps due to large enemy concentrations, small maps will have better escort protection
+
+    static final float HEALER_CHANCE = 0.5f;
 
     static final Direction[] directions = {
         Direction.NORTH,
@@ -85,7 +84,6 @@ public strictfp class RobotPlayer {
             guardianId = guardianInt;
         }
 
-        isTeamA = (rc.getTeam() == Team.A);
         if ((rc.getMapWidth() * rc.getMapHeight()) <= SMALL_MAP_MIN) {mapSizeSmall = true;}
 
         if (rc.readSharedArray(8) != 0) {
@@ -102,11 +100,11 @@ public strictfp class RobotPlayer {
 
         mapCenter = new MapLocation(Math.round(rc.getMapWidth()/2), Math.round(rc.getMapHeight()/2));
         MapLocation[] spawnLocs = rc.getAllySpawnLocations();
-        MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
+        MapLocation[] actualSpawns = findActualSpawns(rc.getAllySpawnLocations());
         spawnLocs = null;
 
         if (!(profession == 1)) {
-            if (rng.nextFloat() >= 0.5) {profession = 2;} else {
+            if (rng.nextFloat() >= HEALER_CHANCE) {profession = 2;} else {
             if (rc.readSharedArray(63) < 7) { // 7 scouts
                 profession = 3;
                 scoutNum = rc.readSharedArray(63);
@@ -191,8 +189,10 @@ public strictfp class RobotPlayer {
 
             if (rc.canBuyGlobal(GlobalUpgrade.HEALING)) {
                 rc.buyGlobal(GlobalUpgrade.HEALING);
-            } else if (rc.canBuyGlobal(GlobalUpgrade.ACTION)) {
-                rc.buyGlobal(GlobalUpgrade.ACTION);
+            } else if (rc.canBuyGlobal(GlobalUpgrade.ATTACK)) {
+                rc.buyGlobal(GlobalUpgrade.ATTACK);
+            } else if (rc.canBuyGlobal(GlobalUpgrade.CAPTURING)) {
+                rc.buyGlobal(GlobalUpgrade.CAPTURING);
             }
 
             try {
@@ -297,7 +297,7 @@ public strictfp class RobotPlayer {
                             }
                         }
 
-                        Pathfinding.pathfind(rc, closestLoc, null);
+                        Pathfinding.pathfind(rc, closestLoc, null, true);
 
                         //escort (x,y)s - 16,17 19,20 22,23
                         //escort ids - 18, 21, 24
@@ -411,8 +411,17 @@ public strictfp class RobotPlayer {
                             profession = 0; //scout returns to being an ordinary soldier
                         }
 
+                        MapLocation dest = new MapLocation(scoutDest[0], scoutDest[1]);
+
+                        if (rc.getLocation().distanceSquaredTo(dest) <= 20) {
+                            if (!rc.senseMapInfo(dest).isPassable()) {
+                                profession = 0;
+                            }
+                        }
+
+
                         //rc.setIndicatorLine(rc.getLocation(), new MapLocation(scoutDest[0], scoutDest[1]), 0, 255, 0);
-                        Pathfinding.pathfind(rc, new MapLocation(scoutDest[0], scoutDest[1]), null);
+                        Pathfinding.pathfind(rc, dest, null, false);
                         scoutEnemyDetect(rc);
                     } else if (profession == 4) {
                         boolean terminated = false;
@@ -421,7 +430,7 @@ public strictfp class RobotPlayer {
                         if (!terminated) {
                             MapLocation escortee = new MapLocation(rc.readSharedArray(escortFollowingIndex - 2), rc.readSharedArray(escortFollowingIndex - 1));
 
-                            Pathfinding.pathfind(rc, escortee, null);
+                            Pathfinding.pathfind(rc, escortee, null, false);
 
                             if (rc.getLocation().distanceSquaredTo(escortee) <= 20) {
                                 if (rc.canHeal(escortee)) {
@@ -472,7 +481,7 @@ public strictfp class RobotPlayer {
 
     public static void scoutEnemyDetect(RobotController rc) throws GameActionException{
         for (MapInfo mi : rc.senseNearbyMapInfos()) {
-            if ((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) {
+            if (mi.getSpawnZoneTeamObject() == rc.getTeam().opponent()) {
                 if (rc.readSharedArray(1) < 1) {
                     if (rc.canWriteSharedArray(1, mi.getMapLocation().x)) {
                         rc.writeSharedArray(1, mi.getMapLocation().x);
@@ -506,7 +515,7 @@ public strictfp class RobotPlayer {
 
     public static void updateMilitaryRecords(RobotController rc) throws GameActionException{
         MapInfo mi = rc.senseMapInfo(rc.getLocation());
-        if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA))) {
+        if (mi.getSpawnZoneTeamObject() == rc.getTeam().opponent()) {
             int spwnIndx = -1;
 
             for (int enemIndx = 0; enemIndx < 3; enemIndx++) {
@@ -527,7 +536,7 @@ public strictfp class RobotPlayer {
             }
 
             for (MapInfo mi_ : rc.senseNearbyMapInfos()) {
-                if (((mi_.getSpawnZoneTeam() == 2 && isTeamA) || (mi_.getSpawnZoneTeam() == 1 && !isTeamA))) {
+                if (mi_.getSpawnZoneTeamObject() == rc.getTeam().opponent()) {
                     if (mi_.getTrapType() == TrapType.NONE) {
                         if (rc.canWriteSharedArray(spwnIndx + 8, 0)) {
                             rc.writeSharedArray(spwnIndx + 8, 0);
@@ -545,7 +554,7 @@ public strictfp class RobotPlayer {
 
     private static MapLocation computeStartingMilitaryDest(RobotController rc) throws GameActionException{
         MapLocation[] spawnLocs = rc.getAllySpawnLocations();
-        MapLocation[] actualSpawns = {spawnLocs[4], spawnLocs[13], spawnLocs[22]};
+        MapLocation[] actualSpawns = findActualSpawns(rc.getAllySpawnLocations());
         float spawnAvgX = (actualSpawns[0].x + actualSpawns[1].x + actualSpawns[2].x) / 3;
         float spawnAvgY = (actualSpawns[0].y + actualSpawns[1].y + actualSpawns[2].y) / 3;
 
@@ -595,7 +604,7 @@ public strictfp class RobotPlayer {
                     militaryDest = computeStartingMilitaryDest(rc);
                 }
 
-                Pathfinding.pathfind(rc, militaryDest, null);
+                Pathfinding.pathfind(rc, militaryDest, null, false);
             } else {militaryMovement(rc);}
 
             if (rc.senseNearbyRobots(-1, rc.getTeam().opponent()).length != 0) {
@@ -643,10 +652,16 @@ public strictfp class RobotPlayer {
                 }
             }
             return;
+        } else {
+            if (rc.getCrumbs() > 1000) {
+                if (rc.canBuild(TrapType.STUN, rc.getLocation())) {
+                    rc.build(TrapType.STUN, rc.getLocation());
+                }
+            }
         }
 
         MapInfo mi = rc.senseMapInfo(rc.getLocation());
-        if (((mi.getSpawnZoneTeam() == 2 && isTeamA) || (mi.getSpawnZoneTeam() == 1 && !isTeamA)) && rc.getCrumbs() > 700) {
+        if ((mi.getSpawnZoneTeamObject() == rc.getTeam().opponent()) && rc.getCrumbs() > 700) {
             if (rc.canBuild(TrapType.EXPLOSIVE, rc.getLocation())) {
                 rc.build(TrapType.EXPLOSIVE, rc.getLocation());
             }
@@ -662,6 +677,7 @@ public strictfp class RobotPlayer {
         boolean makeShiftEscort = false;
 
         MapLocation[] flagDetections = rc.senseBroadcastFlagLocations();
+
         if (mapSizeSmall && !(rc.readSharedArray(18) < 1)) {
             moveTarget = new MapLocation(rc.readSharedArray(16), rc.readSharedArray(17)); makeShiftEscort = true;
         } else if ((mapSizeSmall && !(rc.readSharedArray(21) < 1))) {
@@ -683,9 +699,9 @@ public strictfp class RobotPlayer {
         if (moveTarget != null) {
             rc.setIndicatorLine(rc.getLocation(), moveTarget, 255, 0, 0);
             if (makeShiftEscort) {
-                Pathfinding.pathfind(rc, moveTarget, Pathfinding.calculateNextMove(rc, moveTarget, findEscortDest(rc, moveTarget)));
+                Pathfinding.pathfind(rc, moveTarget, Pathfinding.calculateNextMove(rc, moveTarget, findEscortDest(rc, moveTarget)), false);
             } else {
-                Pathfinding.pathfind(rc, moveTarget, null);
+                Pathfinding.pathfind(rc, moveTarget, null, false);
             }
 
             if (checkNullFlag) {
@@ -810,5 +826,65 @@ public strictfp class RobotPlayer {
         }
 
         return closestLoc;
+    }
+
+    public static MapLocation[] findActualSpawns(MapLocation[] spawns) throws GameActionException{
+        int spwn1 = 0;
+        int spwn2 = 0;
+        int spwn3 = 0;
+        
+        MapLocation spwnFirst1 = null;
+        MapLocation spwnFirst2 = null;
+        MapLocation spwnFirst3 = null;
+
+        MapLocation c1 = null;
+        MapLocation c2 = null;
+        MapLocation c3 = null;
+
+        for (MapLocation ml : spawns) {
+            if (spwn1 == 0) {
+                spwn1 += 1;
+                spwnFirst1 = ml;
+                continue;
+            } else {
+                if (spwnFirst1.distanceSquaredTo(ml) <= 9) {
+                    spwn1 += 1;
+                    if (spwn1 == 5) {
+                        c1 = ml;
+                    }
+                    continue;
+                }
+            }
+
+            if (spwn2 == 0) {
+                spwn2 += 1;
+                spwnFirst2 = ml;
+                continue;
+            } else {
+                if (spwnFirst2.distanceSquaredTo(ml) <= 9) {
+                    spwn2 += 1;
+                    if (spwn2 == 5) {
+                        c2 = ml;
+                    }
+                    continue;
+                }
+            }
+
+            if (spwn3 == 0) {
+                spwn3 += 1;
+                spwnFirst3 = ml;
+                continue;
+            } else {
+                if (spwnFirst3.distanceSquaredTo(ml) <= 9) {
+                    spwn3 += 1;
+                    if (spwn3 == 5) {
+                        c3 = ml;
+                    }
+                    continue;
+                }
+            }
+        }
+
+        return (new MapLocation[]{c1, c2, c3});
     }
 }
